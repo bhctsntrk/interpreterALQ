@@ -4,6 +4,7 @@
 INT = "INT"
 PLUS = "PLUS"
 MINUS = "MINUS"
+MUL = "MUL"
 # WCHAR = "WCHAR"       Do I really need this?
 EOF = "EOF"
 
@@ -70,6 +71,10 @@ class Interpreter(object):
                 token = Token(MINUS, self.currentChar)
                 self.advanceRight()
                 return token
+            if self.currentChar == '*':
+                token = Token(MUL, self.currentChar)
+                self.advanceRight()
+                return token
 
             if self.currentChar == ' ':
                 self.advanceRight()
@@ -86,7 +91,7 @@ class Interpreter(object):
             self.error("wrongExp")
 
     def expression(self):
-        """ INT PLUS/MINUS INT
+        """ INT PLUS/MINUS/MUL INT
         """
         left = None
         right = None
@@ -95,7 +100,7 @@ class Interpreter(object):
 
         left = self.eatToken(INT)
 
-        operand = self.eatToken([PLUS, MINUS])
+        operand = self.eatToken([PLUS, MINUS, MUL])
 
         right = self.eatToken(INT)
 
@@ -105,6 +110,8 @@ class Interpreter(object):
             result = left.value + right.value
         elif operand.tokenType == MINUS:
             result = left.value - right.value
+        elif operand.tokenType == MUL:
+            result = left.value * right.value
         return result
 
 
