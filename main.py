@@ -4,8 +4,9 @@
 INT = "INT"
 PLUS = "PLUS"
 MINUS = "MINUS"
-WCHAR = "WCHAR"
+# WCHAR = "WCHAR"       Do I really need this?
 EOF = "EOF"
+
 
 class Token(object):
     def __init__(self, tokenType, value):
@@ -21,87 +22,91 @@ class Token(object):
     def __repr__(self):
         return self.__str__()
 
+
 class Interpreter(object):
     def __init__(self, text):
         self.text = text
         self.pos = 0
-        self.currentToken = None
+        self.currentChar = self.text[self.pos]
 
-    def error(self):
-        raise Exception("Input Error!")
+    def error(self, errType):
+        if errType == "unknown":
+            raise Exception("Unknown Char!")
+        if errType == "wrongExp":
+            raise Exception("Wrong Expression!")
+
+    def advanceRight(self):
+        self.pos += 1
+        if self.pos > len(self.text) - 1:
+            self.currentChar = None  # Indicates end of input
+        else:
+            self.currentChar = self.text[self.pos]
+
+    def integerToken(self):
+        ret = ''
+        while self.currentChar is not None and self.currentChar.isdigit():
+            ret += str(self.currentChar)
+            self.advanceRight()
+
+        return int(ret)
 
     def getNextToken(self):
-        text = self.text
-        if self.pos > len(text) - 1:
-            return Token(EOF, None)
+        while True:
+            if self.currentChar is None:
+                token = Token(EOF, None)
+                return token
 
-        currentChar = text[self.pos]
+            if self.currentChar.isdigit():
+                bigInt = self.integerToken()
+                token = Token(INT, bigInt)
+                return token
 
-        if currentChar.isdigit():
-            token = Token(INT, currentChar)
-            self.pos += 1
+            if self.currentChar == '+':
+                token = Token(PLUS, self.currentChar)
+                self.advanceRight()
+                return token
+
+            if self.currentChar == '-':
+                token = Token(MINUS, self.currentChar)
+                self.advanceRight()
+                return token
+
+            if self.currentChar == ' ':
+                self.advanceRight()
+                continue
+
+            self.error("unknown")
+
+    def eatToken(self, typeList):
+        token = self.getNextToken()
+
+        if token.tokenType in typeList:
             return token
-
-        if currentChar == '+':
-            token = Token(PLUS, currentChar)
-            self.pos += 1
-            return token
-
-        if currentChar == '-':
-            token = Token(MINUS, currentChar)
-            self.pos += 1
-            return token
-
-        if currentChar == ' ':
-            token = Token(WCHAR, currentChar)
-            self.pos += 1
-            return token
-
-        self.error()
-
-    def checkType(self, tokenType):
-        if self.currentToken.tokenType == tokenType:
-            return True
         else:
-            return False
+            self.error("wrongExp")
 
     def expression(self):
-        self.left = None
-        self.right = None
-        self.operand = None
-        
+        """ INT PLUS/MINUS INT
+        """
+        left = None
+        right = None
+        operand = None
+        eof = None
 
-        while(True):
-            self.currentToken = self.getNextToken()
+        left = self.eatToken(INT)
 
-            if self.checkType(INT):
-                if self.left == None:
-                    self.left = self.currentToken.value
-                else:
-                    if self.operand == None:
-                        self.left = self.left + self.currentToken.value
-                    else:
-                        if self.right == None:
-                            self.right = self.currentToken.value
-                        else:
-                            self.right = self.right + self.currentToken.value
+        operand = self.eatToken([PLUS, MINUS])
 
-            elif self.checkType(PLUS):
-                self.operand = '+'
-            elif self.checkType(MINUS):
-                self.operand = '-'
-            elif self.checkType(WCHAR):
-                continue
-            else:
-                break
-            
-        result = None
+        right = self.eatToken(INT)
 
-        if self.operand == '+':
-            result = int(self.left) + int(self.right)
-        elif self.operand == '-':
-            result = int(self.left) - int(self.right)
+        eof = self.eatToken(EOF)
+
+        if operand.tokenType == PLUS:
+            result = left.value + right.value
+        elif operand.tokenType == MINUS:
+            result = left.value - right.value
         return result
+
 
 def main():
     while True:
@@ -114,7 +119,6 @@ def main():
         interpreter = Interpreter(text)
         result = interpreter.expression()
         print(result)
-    
-    
+
 if __name__ == '__main__':
     main()
