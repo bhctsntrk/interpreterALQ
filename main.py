@@ -30,6 +30,23 @@ class Token(object):
         return self.__str__()
 
 
+class Factor(object):
+    def __init__(self, left, operand, right):
+        self.left = left
+        self.operand = operand
+        self.right = right
+
+    def __str__(self):
+        return "Factor({left}, {operand}, {right}".format(
+            self.left,
+            self.operand,
+            self.right
+            )
+
+    def __repr__(self):
+        return self.__str__()
+
+
 class Interpreter(object):
     """
     Main classs of our Interpreter
@@ -132,36 +149,60 @@ class Interpreter(object):
         else:
             self.error("wrongExp")
 
-    def term(self):
+    def openFactor(self, factor):
+        
+        result = 0
 
+        if type(factor.left) == Factor:
+            result = self.openFactor(factor.left)
+            factor.left = Token(INT, result)
+
+        if factor.operand.tokenType == PLUS:
+            result = factor.left.value + factor.right.value
+        elif factor.operand.tokenType == MINUS:
+            result = factor.left.value - factor.right.value
+        elif factor.operand.tokenType == MUL:
+            result = factor.left.value * factor.right.value
+        elif factor.operand.tokenType == DIV:
+            result = factor.left.value / factor.right.value
+        return result
 
     def expression(self):
-        """ 
-        Expression is defines Tokens order like INT PLUS INT
-        or INT DIV INT. To get Tokens she calls eatToken() function
         """
-        left = None
-        right = None
-        operand = None
-        eof = None
+        Expression is defines order of Tokens or Factors
+        She read from text(code snippet) and create Tokens. Then creates
+        a Factor from three of them. First one Left second one Operand and last one
+        is Right. So a Factor consist from 3 Tokens. However there can be
+        Expressions like consist from more than one Factor. We make factor.left
+        is another factor in this situations
+
+        Expression = Factor + Factor | Factor
+        Factor = Factor + Token + Token | Token + Token + Token
+                    l       o       r       l       o       r
+
+        2 + 4 + 6 + 8
+        l o r
+        -----
+          l   o r
+        ---------
+            l     o r
+
+        """
 
         left = self.eatToken(INT)
-
         operand = self.eatToken([PLUS, MINUS, MUL, DIV])
-
         right = self.eatToken(INT)
 
-        eof = self.eatToken(EOF)
+        factor = Factor(left, operand, right)
 
-        if operand.tokenType == PLUS:
-            result = left.value + right.value
-        elif operand.tokenType == MINUS:
-            result = left.value - right.value
-        elif operand.tokenType == MUL:
-            result = left.value * right.value
-        elif operand.tokenType == DIV:
-            result = left.value / right.value
-        return result
+        while self.currentChar is not None:
+            left = factor
+            operand = self.eatToken([PLUS, MINUS, MUL, DIV])
+            right = self.eatToken(INT)
+
+            factor = Factor(left, operand, right)
+
+        return self.openFactor(factor)
 
 
 def main():
