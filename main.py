@@ -30,23 +30,6 @@ class Token(object):
         return self.__str__()
 
 
-class Factor(object):
-    def __init__(self, left, operand, right):
-        self.left = left
-        self.operand = operand
-        self.right = right
-
-    def __str__(self):
-        return "Factor({left}, {operand}, {right}".format(
-            self.left,
-            self.operand,
-            self.right
-            )
-
-    def __repr__(self):
-        return self.__str__()
-
-
 class Interpreter(object):
     """
     Main classs of our Interpreter
@@ -59,6 +42,7 @@ class Interpreter(object):
         self.text = text
         self.pos = 0
         self.currentChar = self.text[self.pos]
+        self.currentToken = self.getNextToken()
 
     def error(self, errType):
         if errType == "unknown":
@@ -149,61 +133,34 @@ class Interpreter(object):
         else:
             self.error("wrongExp")
 
-    def openFactor(self, factor):
-        
-        result = 0
+    def factor(self):
+        token = self.eatToken(INT)
+        literal = token.value
+        return literal
+    
+    def term(self):
+        result = self.factor()
 
-        if type(factor.left) == Factor:
-            result = self.openFactor(factor.left)
-            factor.left = Token(INT, result)
+        while self.currentToken is not None:
+            token = self.eatToken([MUL, DIV])
+            if token.tokenType == MUL:
+                result *= self.factor()
+            else:
+                result /= self.factor()
 
-        if factor.operand.tokenType == PLUS:
-            result = factor.left.value + factor.right.value
-        elif factor.operand.tokenType == MINUS:
-            result = factor.left.value - factor.right.value
-        elif factor.operand.tokenType == MUL:
-            result = factor.left.value * factor.right.value
-        elif factor.operand.tokenType == DIV:
-            result = factor.left.value / factor.right.value
         return result
 
     def expression(self):
-        """
-        Expression is defines order of Tokens or Factors
-        She read from text(code snippet) and create Tokens. Then creates
-        a Factor from three of them. First one Left second one Operand and last one
-        is Right. So a Factor consist from 3 Tokens. However there can be
-        Expressions like consist from more than one Factor. We make factor.left
-        is another factor in this situations
+        result = self.term()
 
-        Expression = Factor + Factor | Factor
-        Factor = Factor + Token + Token | Token + Token + Token
-                    l       o       r       l       o       r
+        while self.currentToken is not None:
+            token = self.eatToken([PLUS, MINUS])
+            if token.tokenType == PLUS:
+                result += self.term()
+            else:
+                result -= self.term()
 
-        2 + 4 + 6 + 8
-        l o r
-        -----
-          l   o r
-        ---------
-            l     o r
-
-        """
-
-        left = self.eatToken(INT)
-        operand = self.eatToken([PLUS, MINUS, MUL, DIV])
-        right = self.eatToken(INT)
-
-        factor = Factor(left, operand, right)
-
-        while self.currentChar is not None:
-            left = factor
-            operand = self.eatToken([PLUS, MINUS, MUL, DIV])
-            right = self.eatToken(INT)
-
-            factor = Factor(left, operand, right)
-
-        return self.openFactor(factor)
-
+        return result
 
 def main():
     while True:
