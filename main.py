@@ -30,9 +30,9 @@ class Token(object):
         return self.__str__()
 
 
-class Interpreter(object):
+class Lexer(object):
     """
-    Main classs of our Interpreter
+    Lexer of our Interpreter
     It takes text(code snippet)
 
     self.pos ==> A pointer which points the current char in text
@@ -42,13 +42,10 @@ class Interpreter(object):
         self.text = text
         self.pos = 0
         self.currentChar = self.text[self.pos]
-        self.currentToken = self.getNextToken()
 
     def error(self, errType):
         if errType == "unknown":
             raise Exception("Unknown Char!")
-        if errType == "wrongExp":
-            raise Exception("Wrong Expression!")
 
     def advanceRight(self):
         """
@@ -79,7 +76,7 @@ class Interpreter(object):
 
     def getNextToken(self):
         """
-        This function chesk currentChar' s type and use it to
+        This function chesks currentChar' s type and use it to
         create a Token object and return it. If the char is White Space
         function skip to next char and does not create Token for White Space
         """
@@ -119,48 +116,115 @@ class Interpreter(object):
 
             self.error("unknown")
 
+
+class Parser(object):
+    """
+    Parser of our Interpreter
+    Check and calculate expressions. She uses
+    lexer to split up the text(code snippet)
+    then cheks the Tokens orders if they are
+     true expressions and calculable or not
+
+    self.lexer = Lexer to get Tokens
+    self.currentToken ==> Current Token
+    """
+    def __init__(self, lexer):
+        self.lexer = lexer
+        self.currentToken = None
+
+    def error(self, errType):
+        if errType == "wrongExp":
+            raise Exception("Wrong Expression!")
+
     def eatToken(self, typeList):
         """
-        This function call getNNextToken to create a Token from current
-        char of text(code snippet) then she use the typeList to check
-        if the newly created token' s type in expected token types list
-        If not raises error.
+        This function firstly checks the type of currentToken if it can
+        be founded in typeList function get next token and put to
+        currentToken var.
+        It will raises error if there are token type mismatch
         """
-        token = self.getNextToken()
-
-        if token.tokenType in typeList:
-            return token
+        if self.currentToken.tokenType in typeList:
+            self.currentToken = lexer.getNextToken()
         else:
             self.error("wrongExp")
 
     def factor(self):
-        token = self.eatToken(INT)
-        literal = token.value
+        """
+        BNF rule
+            Expr ->     Term | Expr + Term | Expr – Term
+            Term ->     Factor | Term * Factor | Term / Factor
+            Factor ->   Literal | Identifier | (Expr)
+
+        EBNF equivalent
+            Expr ->     Term { [+|-] Term }
+            Term ->     Factor { [* | / ] Factor }
+            Factor ->   Literal | Identifier | (Expr)
+
+        RegEx equivalent
+            Expr ->     (Term | Expr + Term | Expr - Term)
+            Term ->     (Factor | Term * Factor | Term / Factor)
+            Factor ->   (Literal | Identifier | (Expr))
+
+        The main logic in the following three function we try to
+        find split our Tokens to Expr Term and Factor
+
+        For 2+3+4
+
+        We think 2 is Literal and 2+ is a Term
+        after following Tokens after 2+ all of then are another Term
+
+          2 +       3 + 4 .....bla bla
+          - -       - - - ------
+          F F       F F F FFFFFFF
+        -------    --------------------
+          Term          Term
+        -------------------------------
+                Expr
+
+        There are infinite possobilities after 2+
+        so we put it in a while loop everthing
+        need to be calculated. After calculation complete we add value to 2
+
+        Plus Minus can be founded in Term function
+        Mul Div can be founded in Expr function
+        because Mul and Div has priority
+
+        """
+        literal = self.currentToken.value
+        self.eatToken(INT)
         return literal
-    
+
     def term(self):
         result = self.factor()
 
-        while self.currentToken is not None:
-            token = self.eatToken([MUL, DIV])
-            if token.tokenType == MUL:
+        while self.currentToken.tokenType is not EOF:
+            if self.currentToken.tokenType == MUL:
+                self.eatToken(MUL)
                 result *= self.factor()
-            else:
+            elif self.currentToken.tokenType == DIV:
+                self.eatToken(DIV)
                 result /= self.factor()
+            else:
+                break
 
         return result
 
     def expression(self):
+        self.currentToken = self.getNextToken()
         result = self.term()
 
-        while self.currentToken is not None:
-            token = self.eatToken([PLUS, MINUS])
-            if token.tokenType == PLUS:
+        while self.currentToken.tokenType is not EOF:
+            if self.currentToken.tokenType == PLUS:
+                self.eatToken(PLUS)
                 result += self.term()
-            else:
+            elif self.currentToken.tokenType == MINUS:
+                self.eatToken(MINUS)
                 result -= self.term()
+            else:
+                self.error("wrongExp")
 
         return result
+
 
 def main():
     while True:
@@ -170,8 +234,9 @@ def main():
             break
         if not text:
             continue
-        interpreter = Interpreter(text)
-        result = interpreter.expression()
+        lexer = Lexer()
+        parser = Parser(lexer)
+        result = parser.expression()
         print(result)
 
 if __name__ == '__main__':
