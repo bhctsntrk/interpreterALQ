@@ -144,7 +144,7 @@ class Parser(object):
         It will raises error if there are token type mismatch
         """
         if self.currentToken.tokenType in typeList:
-            self.currentToken = lexer.getNextToken()
+            self.currentToken = self.lexer.getNextToken()
         else:
             self.error("wrongExp")
 
@@ -210,7 +210,9 @@ class Parser(object):
         return result
 
     def expression(self):
-        self.currentToken = self.getNextToken()
+        #  Before eating a token we call lexer's getNextToken
+        #  to get first token
+        self.currentToken = self.lexer.getNextToken()
         result = self.term()
 
         while self.currentToken.tokenType is not EOF:
@@ -234,7 +236,7 @@ def main():
             break
         if not text:
             continue
-        lexer = Lexer()
+        lexer = Lexer(text)
         parser = Parser(lexer)
         result = parser.expression()
         print(result)
