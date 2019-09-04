@@ -1,6 +1,7 @@
 # Interpreter ALQ is a experimental interpreter project.
 
-# Tokens ==> INT, PLUS, MINUS, WCHAR (White Char), EOF (End Of File)
+# Tokens ==> INT, PLUS, MINUS, WCHAR (White Char), EOF (End Of File),
+#   OP (Open Parantesis), CP (Close Parantesis)
 INT = "INT"
 PLUS = "PLUS"
 MINUS = "MINUS"
@@ -8,6 +9,8 @@ MUL = "MUL"
 DIV = "DIV"
 # WCHAR = "WCHAR"       Do I really need this?
 EOF = "EOF"
+OP = "OP"
+CP = "CP"
 
 
 class Token(object):
@@ -90,6 +93,16 @@ class Lexer(object):
                 token = Token(INT, bigInt)
                 return token
 
+            if self.currentChar == '(':
+                token = Token(OP, None)
+                self.advanceRight()
+                return token
+
+            if self.currentChar == ')':
+                token = Token(CP, None)
+                self.advanceRight()
+                return token
+
             if self.currentChar == '+':
                 token = Token(PLUS, self.currentChar)
                 self.advanceRight()
@@ -150,6 +163,14 @@ class Parser(object):
 
     def factor(self):
         """
+        Some operators have higher precedence so we need a 
+        non-terminal for every precedence level.
+
+        So we use term and expr for (* /) and (+ -)
+
+        The general rule is that if we have N levels of precedence
+        we will need N + 1 non-terminals in total.
+
         BNF rule
             Expr ->     Term | Expr + Term | Expr – Term
             Term ->     Factor | Term * Factor | Term / Factor
@@ -190,8 +211,18 @@ class Parser(object):
         because Mul and Div has priority
 
         """
-        literal = self.currentToken.value
-        self.eatToken(INT)
+        literal = None
+
+        if self.currentToken.tokenType == INT:
+            literal = self.currentToken.value
+            self.eatToken(INT)
+
+        # Call expression again Factor ->   (Literal | Identifier | (Expr))
+        #                                                              ^                                                                             
+        elif self.currentToken.tokenType == OP:
+            literal = self.expression()
+            self.eatToken(CP)
+
         return literal
 
     def term(self):
@@ -222,6 +253,9 @@ class Parser(object):
             elif self.currentToken.tokenType == MINUS:
                 self.eatToken(MINUS)
                 result -= self.term()
+            # Break the expression and force to return a value
+            elif self.currentToken.tokenType == CP:
+                break
             else:
                 self.error("wrongExp")
 
