@@ -130,20 +130,40 @@ class Lexer(object):
             self.error("unknown")
 
 
+class BinaryNode(object):
+    def __init__(self, left, operator, right):
+        self.lNode = left
+        self.opToken = operator
+        self.rNode = right
+
+
+class NumNode(object):
+    def __init__(self, token):
+        self.value = token.value
+
+
 class Parser(object):
     """
     Parser of our Interpreter
     Check and calculate expressions. She uses
     lexer to split up the text(code snippet)
     then cheks the Tokens orders if they are
-     true expressions and calculable or not
+    true expressions and calculable or not.
+
+    Then she creates an ASC Tree and return it
+
+        +
+       / \
+      1   +
+         / \
+        3   2
 
     self.lexer = Lexer to get Tokens
     self.currentToken ==> Current Token
     """
     def __init__(self, lexer):
         self.lexer = lexer
-        self.currentToken = None
+        self.currentToken = self.lexer.getNextToken()
 
     def error(self, errType):
         if errType == "wrongExp":
@@ -163,7 +183,7 @@ class Parser(object):
 
     def factor(self):
         """
-        Some operators have higher precedence so we need a 
+        Some operators have higher precedence so we need a
         non-terminal for every precedence level.
 
         So we use term and expr for (* /) and (+ -)
@@ -211,54 +231,130 @@ class Parser(object):
         because Mul and Div has priority
 
         """
-        literal = None
+        literalNode = None
+        token = self.currentToken
 
         if self.currentToken.tokenType == INT:
-            literal = self.currentToken.value
             self.eatToken(INT)
+            literalNode = NumNode(token)
 
         # Call expression again Factor ->   (Literal | Identifier | (Expr))
-        #                                                              ^                                                                             
+        #                                                              ^
         elif self.currentToken.tokenType == OP:
-            literal = self.expression()
+            self.eatToken(OP)
+            literalNode = self.expression()
             self.eatToken(CP)
 
-        return literal
+        return literalNode
 
     def term(self):
-        result = self.factor()
+        resultNode = self.factor()
 
         while self.currentToken.tokenType is not EOF:
-            if self.currentToken.tokenType == MUL:
+            token = self.currentToken
+            if token.tokenType == MUL:
                 self.eatToken(MUL)
-                result *= self.factor()
-            elif self.currentToken.tokenType == DIV:
+            elif token.tokenType == DIV:
                 self.eatToken(DIV)
-                result /= self.factor()
             else:
                 break
 
-        return result
+            resultNode = BinaryNode(resultNode, token, self.factor())
+
+        return resultNode
 
     def expression(self):
-        #  Before eating a token we call lexer's getNextToken
-        #  to get first token
-        self.currentToken = self.lexer.getNextToken()
-        result = self.term()
+        resultNode = self.term()
 
         while self.currentToken.tokenType is not EOF:
-            if self.currentToken.tokenType == PLUS:
+            token = self.currentToken
+            if token.tokenType == PLUS:
                 self.eatToken(PLUS)
-                result += self.term()
-            elif self.currentToken.tokenType == MINUS:
+            elif token.tokenType == MINUS:
                 self.eatToken(MINUS)
-                result -= self.term()
             # Break the expression and force to return a value
-            elif self.currentToken.tokenType == CP:
+            elif token.tokenType == CP:
                 break
             else:
                 self.error("wrongExp")
 
+            resultNode = BinaryNode(resultNode, token, self.term())
+
+        return resultNode
+
+    def parse(self):
+        return self.expression()
+
+
+class Interpreter(object):
+    """
+    Interpreter get a ASC tree from parser
+    to calculate tree she use postorder traversal.
+
+    """
+    def __init__(self, parser):
+        self.parser = parser
+
+    def error(self, errType):
+        if errType == "unknownNode":
+            raise Exception("Unknown Node!")
+        elif errType == "unknownOp":
+            raise Exception("Unknown Operator!")
+
+    def lispNotation(self, nodeTree):
+        result = ""
+        if type(nodeTree) == BinaryNode:
+            left = self.lispNotation(nodeTree.lNode)
+            right = self.lispNotation(nodeTree.rNode)
+            operator = nodeTree.opToken
+
+            result += " ".join([operator.value, str(left), str(right)])
+            return result
+
+        elif type(nodeTree) == NumNode:
+            return nodeTree.value
+
+    def revPolishNotation(self, nodeTree):
+        result = ""
+        if type(nodeTree) == BinaryNode:
+            left = self.revPolishNotation(nodeTree.lNode)
+            right = self.revPolishNotation(nodeTree.rNode)
+            operator = nodeTree.opToken
+
+            result += " ".join([str(left), str(right), operator.value])
+            return result
+
+        elif type(nodeTree) == NumNode:
+            return nodeTree.value
+
+    def traverseTree(self, nodeTree):
+        if type(nodeTree) == BinaryNode:
+            left = self.traverseTree(nodeTree.lNode)
+            right = self.traverseTree(nodeTree.rNode)
+            operator = nodeTree.opToken
+
+            if operator.tokenType == PLUS:
+                return left + right
+            elif operator.tokenType == MINUS:
+                return left - right
+            elif operator.tokenType == MUL:
+                return left * right
+            elif operator.tokenType == DIV:
+                return left / right
+            else:
+                self.error("unknownOp")
+
+        elif type(nodeTree) == NumNode:
+            return nodeTree.value
+
+        else:
+            self.error(self, "unknownNode")
+
+    def interpret(self):
+        nodeTree = self.parser.parse()
+        print("Reverse Polish Notation = ",self.revPolishNotation(nodeTree))
+        print("Lisp Notation = ",self.lispNotation(nodeTree))
+        result = self.traverseTree(nodeTree)
         return result
 
 
@@ -272,7 +368,8 @@ def main():
             continue
         lexer = Lexer(text)
         parser = Parser(lexer)
-        result = parser.expression()
+        interpreter = Interpreter(parser)
+        result = interpreter.interpret()
         print(result)
 
 if __name__ == '__main__':
