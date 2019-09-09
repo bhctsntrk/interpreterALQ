@@ -12,6 +12,8 @@ EOF = "EOF"
 OP = "OP"
 CP = "CP"
 
+# LEXER ==========================================
+
 
 class Token(object):
     """
@@ -129,8 +131,15 @@ class Lexer(object):
 
             self.error("unknown")
 
+# PARSER ==========================================
+
 
 class BinaryNode(object):
+    """
+    Binary nodes represents operations
+    3 + 5
+    l o r
+    """
     def __init__(self, left, operator, right):
         self.lNode = left
         self.opToken = operator
@@ -138,8 +147,33 @@ class BinaryNode(object):
 
 
 class NumNode(object):
-    def __init__(self, token):
-        self.value = token.value
+    """
+    Num nodes represents numbers
+    """
+    def __init__(self, value):
+        self.value = value
+
+
+class UnaryNode(object):
+    """
+    Unary nodes represents unary operators
+    Unary node has two thing first is operator
+    Second is child. Child can be NumNode(Number)
+    or another UnaryNode to express something like this
+        5    -    -    -    4
+       INT  MIN  MIN  MIN  INT
+       INT  BNY  UNY  UNY  INT
+       INT  BNY  UNY     INT
+       INT  BNY       INT
+     Factor    -     Factor
+           EXPRESSION
+
+    -     4 | Unary
+    op    child
+    """
+    def __init__(self, operator, child):
+        self.opToken = operator
+        self.childToken = child
 
 
 class Parser(object):
@@ -152,11 +186,15 @@ class Parser(object):
 
     Then she creates an ASC Tree and return it
 
-        +
+    1 + (3 + (-2))
+
+        +(BinaryNode)
        / \
-      1   +
+      1   +(BinaryNode)
          / \
-        3   2
+        3  UNARY(-)
+             \
+              2(NumNode)
 
     self.lexer = Lexer to get Tokens
     self.currentToken ==> Current Token
@@ -194,17 +232,12 @@ class Parser(object):
         BNF rule
             Expr ->     Term | Expr + Term | Expr – Term
             Term ->     Factor | Term * Factor | Term / Factor
-            Factor ->   Literal | Identifier | (Expr)
-
-        EBNF equivalent
-            Expr ->     Term { [+|-] Term }
-            Term ->     Factor { [* | / ] Factor }
-            Factor ->   Literal | Identifier | (Expr)
+            Factor ->   (PLUS|MINUS)Factor | Literal | Identifier | (Expr)
 
         RegEx equivalent
             Expr ->     (Term | Expr + Term | Expr - Term)
             Term ->     (Factor | Term * Factor | Term / Factor)
-            Factor ->   (Literal | Identifier | (Expr))
+            Factor ->   ((PLUS|MINUS)Factor | Literal | Identifier | (Expr))
 
         The main logic in the following three function we try to
         find split our Tokens to Expr Term and Factor
@@ -236,7 +269,15 @@ class Parser(object):
 
         if self.currentToken.tokenType == INT:
             self.eatToken(INT)
-            literalNode = NumNode(token)
+            literalNode = NumNode(token.value)
+
+        elif self.currentToken.tokenType == PLUS:
+            self.eatToken(PLUS)
+            literalNode = UnaryNode(token, self.factor())
+
+        elif self.currentToken.tokenType == MINUS:
+            self.eatToken(MINUS)
+            literalNode = UnaryNode(token, self.factor())
 
         # Call expression again Factor ->   (Literal | Identifier | (Expr))
         #                                                              ^
@@ -285,12 +326,13 @@ class Parser(object):
     def parse(self):
         return self.expression()
 
+# INTERPRETER ===================================
+
 
 class Interpreter(object):
     """
     Interpreter get a ASC tree from parser
     to calculate tree she use postorder traversal.
-
     """
     def __init__(self, parser):
         self.parser = parser
@@ -301,37 +343,44 @@ class Interpreter(object):
         elif errType == "unknownOp":
             raise Exception("Unknown Operator!")
 
-    def lispNotation(self, nodeTree):
+    def lispNotation(self, rootNode):
         result = ""
-        if type(nodeTree) == BinaryNode:
-            left = self.lispNotation(nodeTree.lNode)
-            right = self.lispNotation(nodeTree.rNode)
-            operator = nodeTree.opToken
+        if type(rootNode) == BinaryNode:
+            left = self.lispNotation(rootNode.lNode)
+            right = self.lispNotation(rootNode.rNode)
+            operator = rootNode.opToken
 
             result += " ".join([operator.value, str(left), str(right)])
             return result
 
-        elif type(nodeTree) == NumNode:
-            return nodeTree.value
+        elif type(rootNode) == NumNode:
+            return rootNode.value
 
-    def revPolishNotation(self, nodeTree):
+    def revPolishNotation(self, rootNode):
         result = ""
-        if type(nodeTree) == BinaryNode:
-            left = self.revPolishNotation(nodeTree.lNode)
-            right = self.revPolishNotation(nodeTree.rNode)
-            operator = nodeTree.opToken
+        if type(rootNode) == BinaryNode:
+            left = self.revPolishNotation(rootNode.lNode)
+            right = self.revPolishNotation(rootNode.rNode)
+            operator = rootNode.opToken
 
             result += " ".join([str(left), str(right), operator.value])
             return result
 
-        elif type(nodeTree) == NumNode:
-            return nodeTree.value
+        elif type(rootNode) == NumNode:
+            return rootNode.value
 
-    def traverseTree(self, nodeTree):
-        if type(nodeTree) == BinaryNode:
-            left = self.traverseTree(nodeTree.lNode)
-            right = self.traverseTree(nodeTree.rNode)
-            operator = nodeTree.opToken
+    def traverseTree(self, rootNode):
+        """
+        This function traverse the tree in postorder
+        Get root node as param and check the type
+        if NumNode just return the value
+        If binary calculate the expression
+        If unary change numbers' s sign
+        """
+        if type(rootNode) == BinaryNode:
+            left = self.traverseTree(rootNode.lNode)
+            right = self.traverseTree(rootNode.rNode)
+            operator = rootNode.opToken
 
             if operator.tokenType == PLUS:
                 return left + right
@@ -344,18 +393,24 @@ class Interpreter(object):
             else:
                 self.error("unknownOp")
 
-        elif type(nodeTree) == NumNode:
-            return nodeTree.value
+        elif type(rootNode) == NumNode:
+            return rootNode.value
+
+        elif type(rootNode) == UnaryNode:
+            if rootNode.opToken.tokenType == PLUS:
+                return +1 * self.traverseTree(rootNode.childToken)
+            elif rootNode.opToken.tokenType == MINUS:
+                return -1 * self.traverseTree(rootNode.childToken)
 
         else:
             self.error(self, "unknownNode")
 
     def interpret(self):
-        nodeTree = self.parser.parse()
-        print("Reverse Polish Notation = ",self.revPolishNotation(nodeTree))
-        print("Lisp Notation = ",self.lispNotation(nodeTree))
-        result = self.traverseTree(nodeTree)
-        return result
+        rootNode = self.parser.parse()
+        # print("Reverse Polish Notation = ", self.revPolishNotation(rootNode))
+        # print("Lisp Notation = ", self.lispNotation(rootNode))
+        result = self.traverseTree(rootNode)
+        return int(result)
 
 
 def main():
