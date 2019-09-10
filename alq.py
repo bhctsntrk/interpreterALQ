@@ -1,16 +1,20 @@
 # Interpreter ALQ is a experimental interpreter project.
 
-# Tokens ==> INT, PLUS, MINUS, WCHAR (White Char), EOF (End Of File),
-#   OP (Open Parantesis), CP (Close Parantesis)
+# Tokens
 INT = "INT"
 PLUS = "PLUS"
 MINUS = "MINUS"
 MUL = "MUL"
 DIV = "DIV"
-# WCHAR = "WCHAR"       Do I really need this?
 EOF = "EOF"
 OP = "OP"
 CP = "CP"
+BEGIN = "BEGIN"
+END = "END"
+DOT = "DOT"
+ID = "ID"
+ASSIGN = "ASSIGN"
+SEMICOLON = "SEMICOLON"
 
 # LEXER ==========================================
 
@@ -26,13 +30,20 @@ class Token(object):
         self.value = value
 
     def __str__(self):
-        return "Token({tokenType}, {value}".format(
+        return "Token({}, {})".format(
             self.tokenType,
             repr(self.value)
         )
 
     def __repr__(self):
         return self.__str__()
+
+
+# KEYWORDS
+KEYWORDS = {
+    "BEGIN": Token(BEGIN, "BEGIN"),
+    "END": Token(END, "END")
+}
 
 
 class Lexer(object):
@@ -64,6 +75,32 @@ class Lexer(object):
         else:
             self.currentChar = self.text[self.pos]
 
+    def peekRight(self):
+        """
+        Sometimes to find differentiate between tokens we need
+        to see second char(like tokens =>, ==)
+        So this function peek to right characer but not advance
+        """
+        peekPos = self.pos + 1
+        if peekPos > len(self.text) - 1:
+            return None  # Indicates end of input
+        else:
+            return self.text[peekPos]
+
+    def identifierToken(self):
+        """
+        This function controls identifiers. If first char is alpha
+        this function called. Then this function merge all alphanums
+        and return as a identifier name like (box1, test, START)
+        The string that return can be a keyword.
+        """
+        ret = ""
+        while self.currentChar is not None and self.currentChar.isalnum():
+            ret += str(self.currentChar)
+            self.advanceRight()
+
+        return ret
+
     def integerToken(self):
         """
         As you know we read text(code snippet) as a one char in every iteration
@@ -88,6 +125,12 @@ class Lexer(object):
         while True:
             if self.currentChar is None:
                 token = Token(EOF, None)
+                return token
+
+            if self.currentChar.isalpha():
+                identifier = self.identifierToken()
+                # Return ID if identifier not keyword
+                token = KEYWORDS.get(identifier, Token(ID, identifier))
                 return token
 
             if self.currentChar.isdigit():
@@ -122,6 +165,22 @@ class Lexer(object):
 
             if self.currentChar == '/':
                 token = Token(DIV, self.currentChar)
+                self.advanceRight()
+                return token
+
+            if self.currentChar == '.':
+                token = Token(DOT, self.currentChar)
+                self.advanceRight()
+                return token
+
+            if self.currentChar == ';':
+                token = Token(SEMICOLON, self.currentChar)
+                self.advanceRight()
+                return token
+
+            if self.currentChar == ':' and self.peekRight() == '=':
+                token = Token(ASSIGN, ":=")
+                self.advanceRight()
                 self.advanceRight()
                 return token
 
