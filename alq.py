@@ -191,6 +191,44 @@ class Lexer(object):
             self.error("unknown")
 
 # PARSER ==========================================
+# This classes are ASC tree node definitions.
+
+
+class Compound(object):
+    """
+    Compound Node contains a list consist from statement.
+    """
+    def __init__(self, statementNodes):
+        self.childs = statementNodes
+
+
+class AssignmentNode(object):
+    """
+    This class define Assigment node.
+
+    variable ASSIGN expression
+        l      o         r
+    """
+    def __init__(self, variableNode, assignOp, expressionNode):
+        self.left = variableNode
+        self.op = assignOp
+        self.right = expressionNode
+
+
+class VariableNode(object):
+    """
+    Defines variable node
+    """
+    def __init__(self, variable):
+        self.variable = variable
+
+
+class EmptyNode(object):
+    """
+    Defines empty compound like BEGIN END
+    """
+    def __init__(self):
+        pass
 
 
 class BinaryNode(object):
@@ -382,8 +420,60 @@ class Parser(object):
 
         return resultNode
 
+    def empty(self):  # ===
+        return EmptyNode()
+
+    def variable(self):
+        variableNode = Variable(self.currentToken.value)
+        self.eatToken(ID)
+        return variableNode
+
+    def assignment(self):
+        variableNode = self.variable()
+        assignOp = self.currentToken.value
+        self.eatToken(ASSIGN)
+        expression = self.expression()
+
+        assignmentNode = AssignmentNode(variable, assignOp, expression)
+
+    def statement(self):
+        if self.currentToken.tokenType == ID:
+            assignmentNode = self.assignment()
+            return assignmentNode
+
+        elif self.currentToken.tokenType == BEGIN:
+            compoundNode = self.compound()
+            return compoundNode
+
+        else:
+            return EmptyNode()
+
+    def statement_list(self):
+        statementNodes = []
+
+        statementNodes.append(self.statement())
+        while self.currentToken.tokenType is SEMICOLON:
+            self.eatToken(SEMICOLON)
+            statementNodes.append(self.statement())
+
+        if self.currentToken.tokenType is ID:
+            self.error("wrongExp")
+
+        return statementNodes
+
+    def compound(self):
+        self.eatToken(BEGIN)
+        root = Compund(self.statement_list())
+        self.eatToken(END)
+        return root
+
+    def program(self):
+        root = self.compound()
+        self.eatToken(DOT)
+        return root
+
     def parse(self):
-        return self.expression()
+        return self.program()
 
 # INTERPRETER ===================================
 
