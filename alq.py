@@ -194,9 +194,9 @@ class Lexer(object):
 # This classes are ASC tree node definitions.
 
 
-class Compound(object):
+class CompoundNode(object):
     """
-    Compound Node contains a list consist from statement.
+    Compound Node contains a list consist from statements.
     """
     def __init__(self, statementNodes):
         self.childs = statementNodes
@@ -209,10 +209,10 @@ class AssignmentNode(object):
     variable ASSIGN expression
         l      o         r
     """
-    def __init__(self, variableNode, assignOp, expressionNode):
+    def __init__(self, variableNode, assignOp, expression):
         self.left = variableNode
         self.op = assignOp
-        self.right = expressionNode
+        self.right = expression
 
 
 class VariableNode(object):
@@ -233,7 +233,7 @@ class EmptyNode(object):
 
 class BinaryNode(object):
     """
-    Binary nodes represents operations
+    Binary nodes represents operations in expressions
     3 + 5
     l o r
     """
@@ -283,7 +283,8 @@ class Parser(object):
 
     Then she creates an ASC Tree and return it
 
-    1 + (3 + (-2))
+    Example =   1 + (3 + (-2))
+    Tree =
 
         +(BinaryNode)
        / \
@@ -292,6 +293,18 @@ class Parser(object):
         3  UNARY(-)
              \
               2(NumNode)
+
+    Example =   BEGIN BEGIN number := 2; a := number; b := 10 * a + 10 * number / 4; c := a - - b END; x := 11; END.
+    Tree =
+
+                                         Compound _____
+                                            /    \     \
+                                   Compound       \    |
+                                 /                 /   \
+                                                  :=    EmptyNode
+                                                  / \  
+                                                 x  11
+
 
     self.lexer = Lexer to get Tokens
     self.currentToken ==> Current Token
@@ -329,12 +342,12 @@ class Parser(object):
         BNF rule
             Expr ->     Term | Expr + Term | Expr – Term
             Term ->     Factor | Term * Factor | Term / Factor
-            Factor ->   (PLUS|MINUS)Factor | Literal | Identifier | (Expr)
+            Factor ->   (PLUS|MINUS)Factor | Literal | Identifier | (Expr) | variable
 
         RegEx equivalent
             Expr ->     (Term | Expr + Term | Expr - Term)
             Term ->     (Factor | Term * Factor | Term / Factor)
-            Factor ->   ((PLUS|MINUS)Factor | Literal | Identifier | (Expr))
+            Factor ->   ((PLUS|MINUS)Factor | Literal | Identifier | (Expr) | variable
 
         The main logic in the following three function we try to
         find split our Tokens to Expr Term and Factor
@@ -383,6 +396,9 @@ class Parser(object):
             literalNode = self.expression()
             self.eatToken(CP)
 
+        elif self.currentToken.tokenType == ID:
+            literalNode = self.variable()
+
         return literalNode
 
     def term(self):
@@ -411,20 +427,20 @@ class Parser(object):
             elif token.tokenType == MINUS:
                 self.eatToken(MINUS)
             # Break the expression and force to return a value
-            elif token.tokenType == CP:
-                break
             else:
-                self.error("wrongExp")
+                break
 
             resultNode = BinaryNode(resultNode, token, self.term())
 
         return resultNode
 
-    def empty(self):  # ===
+    def empty(self):
+        # Empty Node
         return EmptyNode()
 
     def variable(self):
-        variableNode = Variable(self.currentToken.value)
+        # Return a variable node
+        variableNode = VariableNode(self.currentToken.value)
         self.eatToken(ID)
         return variableNode
 
@@ -434,7 +450,9 @@ class Parser(object):
         self.eatToken(ASSIGN)
         expression = self.expression()
 
-        assignmentNode = AssignmentNode(variable, assignOp, expression)
+        assignmentNode = AssignmentNode(variableNode, assignOp, expression)
+
+        return assignmentNode
 
     def statement(self):
         if self.currentToken.tokenType == ID:
@@ -463,7 +481,7 @@ class Parser(object):
 
     def compound(self):
         self.eatToken(BEGIN)
-        root = Compund(self.statement_list())
+        root = CompoundNode(self.statement_list())
         self.eatToken(END)
         return root
 
@@ -485,38 +503,15 @@ class Interpreter(object):
     """
     def __init__(self, parser):
         self.parser = parser
+        self.variableStorage = {}
 
     def error(self, errType):
         if errType == "unknownNode":
             raise Exception("Unknown Node!")
         elif errType == "unknownOp":
             raise Exception("Unknown Operator!")
-
-    def lispNotation(self, rootNode):
-        result = ""
-        if type(rootNode) == BinaryNode:
-            left = self.lispNotation(rootNode.lNode)
-            right = self.lispNotation(rootNode.rNode)
-            operator = rootNode.opToken
-
-            result += " ".join([operator.value, str(left), str(right)])
-            return result
-
-        elif type(rootNode) == NumNode:
-            return rootNode.value
-
-    def revPolishNotation(self, rootNode):
-        result = ""
-        if type(rootNode) == BinaryNode:
-            left = self.revPolishNotation(rootNode.lNode)
-            right = self.revPolishNotation(rootNode.rNode)
-            operator = rootNode.opToken
-
-            result += " ".join([str(left), str(right), operator.value])
-            return result
-
-        elif type(rootNode) == NumNode:
-            return rootNode.value
+        elif errType == "noVariable":
+            raise Exception("Undefined Variable Name")
 
     def traverseTree(self, rootNode):
         """
@@ -526,7 +521,27 @@ class Interpreter(object):
         If binary calculate the expression
         If unary change numbers' s sign
         """
-        if type(rootNode) == BinaryNode:
+        if type(rootNode) == CompoundNode:
+            [self.traverseTree(statement) for statement in rootNode.childs]
+
+        elif type(rootNode) == AssignmentNode:
+            variable = rootNode.left.variable
+            expression = rootNode.right
+
+            expression = self.traverseTree(expression)
+            self.variableStorage[variable] = expression
+
+        elif type(rootNode) == VariableNode:
+            variable = rootNode.variable
+            if variable in self.variableStorage:
+                return self.variableStorage[variable]
+            else:
+                self.error("noVariable")
+
+        elif type(rootNode) == EmptyNode:
+            pass
+
+        elif type(rootNode) == BinaryNode:
             left = self.traverseTree(rootNode.lNode)
             right = self.traverseTree(rootNode.rNode)
             operator = rootNode.opToken
@@ -556,10 +571,7 @@ class Interpreter(object):
 
     def interpret(self):
         rootNode = self.parser.parse()
-        # print("Reverse Polish Notation = ", self.revPolishNotation(rootNode))
-        # print("Lisp Notation = ", self.lispNotation(rootNode))
-        result = self.traverseTree(rootNode)
-        return int(result)
+        self.traverseTree(rootNode)
 
 
 def main():
@@ -573,8 +585,8 @@ def main():
         lexer = Lexer(text)
         parser = Parser(lexer)
         interpreter = Interpreter(parser)
-        result = interpreter.interpret()
-        print(result)
+        interpreter.interpret()
+        print(interpreter.variableStorage)
 
 if __name__ == '__main__':
     main()
