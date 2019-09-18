@@ -6,6 +6,7 @@ PLUS = "PLUS"
 MINUS = "MINUS"
 MUL = "MUL"
 DIV = "DIV"
+INTDIV = "INTDIV"
 EOF = "EOF"
 OP = "OP"
 CP = "CP"
@@ -41,8 +42,9 @@ class Token(object):
 
 # KEYWORDS
 KEYWORDS = {
-    "BEGIN": Token(BEGIN, "BEGIN"),
-    "END": Token(END, "END")
+    "BEGIN": BEGIN,
+    "END": END,
+    "DIV": INTDIV
 }
 
 
@@ -95,7 +97,9 @@ class Lexer(object):
         The string that return can be a keyword.
         """
         ret = ""
-        while self.currentChar is not None and self.currentChar.isalnum():
+        # Var names can start with underscore(_)
+        while self.currentChar is not None and self.currentChar.isalnum() or\
+                self.currentChar == "_":
             ret += str(self.currentChar)
             self.advanceRight()
 
@@ -129,8 +133,13 @@ class Lexer(object):
 
             if self.currentChar.isalpha():
                 identifier = self.identifierToken()
-                # Return ID if identifier not keyword
-                token = KEYWORDS.get(identifier, Token(ID, identifier))
+                # Return ID if identifier not keyword.
+                # We use upper to ignore case sensivity in keywords
+                if identifier.upper() in KEYWORDS:
+                    token = \
+                        Token(KEYWORDS[identifier.upper()], identifier.upper())
+                else:
+                    token = Token(ID, identifier)
                 return token
 
             if self.currentChar.isdigit():
@@ -302,7 +311,7 @@ class Parser(object):
                                    Compound       \    |
                                  /                 /   \
                                                   :=    EmptyNode
-                                                  / \  
+                                                  / \
                                                  x  11
 
 
@@ -410,6 +419,8 @@ class Parser(object):
                 self.eatToken(MUL)
             elif token.tokenType == DIV:
                 self.eatToken(DIV)
+            elif token.tokenType == INTDIV:
+                self.eatToken(INTDIV)
             else:
                 break
 
@@ -554,6 +565,8 @@ class Interpreter(object):
                 return left * right
             elif operator.tokenType == DIV:
                 return left / right
+            elif operator.tokenType == INTDIV:
+                return left // right
             else:
                 self.error("unknownOp")
 
