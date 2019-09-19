@@ -1,7 +1,10 @@
 # Interpreter ALQ is a experimental interpreter project.
 
 # Tokens
-INT = "INT"
+INTEGER = "INTEGER"
+REAL = "REAL"
+INTNUM = "INTNUM"
+REALNUM = "REALNUM"
 PLUS = "PLUS"
 MINUS = "MINUS"
 MUL = "MUL"
@@ -13,9 +16,25 @@ CP = "CP"
 BEGIN = "BEGIN"
 END = "END"
 DOT = "DOT"
+COMMA = "COMMA"
+COLON = "COLON"
 ID = "ID"
 ASSIGN = "ASSIGN"
 SEMICOLON = "SEMICOLON"
+PROGRAM = "PROGRAM"
+VAR = "VAR"
+
+# KEYWORDS
+KEYWORDS = {
+    "BEGIN": BEGIN,
+    "END": END,
+    "DIV": INTDIV,
+    "PROGRAM": PROGRAM,
+    "VAR": VAR,
+    "INTEGER": INTEGER,
+    "REAL": REAL
+}
+
 
 # LEXER ==========================================
 
@@ -38,15 +57,6 @@ class Token(object):
 
     def __repr__(self):
         return self.__str__()
-
-
-# KEYWORDS
-KEYWORDS = {
-    "BEGIN": BEGIN,
-    "END": END,
-    "DIV": INTDIV
-}
-
 
 class Lexer(object):
     """
@@ -105,20 +115,35 @@ class Lexer(object):
 
         return ret
 
-    def integerToken(self):
+    def handleNumbers(self):
         """
         As you know we read text(code snippet) as a one char in every iteration
-        however there are some Integers that wee need more than one char to
-        define them (10 and every other INTs that bigger than 10 and
-        also negative ones) So wee need this function to merge chars to
-        create this integers
+        however there are some numbers that wee need more than one char to
+        define them. So we need this function to merge chars to
+        create this numbers even they are floats and contains dot(.)
         """
         ret = ''
+        isReal = False
         while self.currentChar is not None and self.currentChar.isdigit():
             ret += str(self.currentChar)
             self.advanceRight()
 
-        return int(ret)
+            if self.currentChar is '.':
+                isReal = True
+        if isReal:
+            return Token(REALNUM, float(ret))
+        else:
+            return Token(INTNUM, int(ret))
+
+    def handleComment(self):
+        """
+        Advance right and ignore
+        until to get '}' character.
+        Then return empty
+        """
+        while self.currentChar != '}':
+            self.advanceRight()
+        return
 
     def getNextToken(self):
         """
@@ -143,9 +168,13 @@ class Lexer(object):
                 return token
 
             if self.currentChar.isdigit():
-                bigInt = self.integerToken()
-                token = Token(INT, bigInt)
+                token = self.handleNumbers()
                 return token
+
+            if self.currentChar == '{':
+                self.handleComment()
+                self.advanceRight() # Move next char after "}"
+                continue
 
             if self.currentChar == '(':
                 token = Token(OP, None)
@@ -187,6 +216,16 @@ class Lexer(object):
                 self.advanceRight()
                 return token
 
+            if self.currentChar == ':':
+                token = Token(COLON, self.currentChar)
+                self.advanceRight()
+                return token
+
+            if self.currentChar == ';':
+                token = Token(COMMA, self.currentChar)
+                self.advanceRight()
+                return token
+
             if self.currentChar == ':' and self.peekRight() == '=':
                 token = Token(ASSIGN, ":=")
                 self.advanceRight()
@@ -201,6 +240,34 @@ class Lexer(object):
 
 # PARSER ==========================================
 # This classes are ASC tree node definitions.
+
+class ProgramNode(object):
+    """
+    Main program root node. Contains program name and block node
+    """
+    def __init__(self, progName, block):
+        self.name = progName
+        self.block = block
+
+
+class BlockNode(object):
+    """
+    Block node contains var declaration part
+    plus compound part
+    """
+    def __init__(self, declarations, compounds):
+        self.declarations = declarations
+        self.compounds = compounds
+
+
+class VarDeclarationNode(object):
+    """
+    This node uses for variable declarations in
+    very beginning of the program
+    """
+    def __init__(self, value, valueType):
+        self.value = value
+        self.valueType = valueType
 
 
 class CompoundNode(object):
@@ -386,8 +453,8 @@ class Parser(object):
         literalNode = None
         token = self.currentToken
 
-        if self.currentToken.tokenType == INT:
-            self.eatToken(INT)
+        if self.currentToken.tokenType == INTNUM:
+            self.eatToken(INTNUM)
             literalNode = NumNode(token.value)
 
         elif self.currentToken.tokenType == PLUS:
@@ -496,8 +563,21 @@ class Parser(object):
         self.eatToken(END)
         return root
 
+    def declaration(self):
+        varDeclaration = self.varDeclaration()
+        return varDeclaration
+
+    def block(self):
+        declarations = self.declaration()
+        compounds = self.compound()
+        blockNode = BlockNode(declarations, compounds)
+        return blockNode
+
     def program(self):
-        root = self.compound()
+        self.eatToken(PROGRAM)
+        progName = self.variable().variable
+        blockNode = self.block()
+        root = ProgramNode(progName, blockNode)
         self.eatToken(DOT)
         return root
 
@@ -580,7 +660,7 @@ class Interpreter(object):
                 return -1 * self.traverseTree(rootNode.childToken)
 
         else:
-            self.error(self, "unknownNode")
+            self.error("unknownNode")
 
     def interpret(self):
         rootNode = self.parser.parse()
