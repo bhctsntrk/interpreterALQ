@@ -58,6 +58,7 @@ class Token(object):
     def __repr__(self):
         return self.__str__()
 
+
 class Lexer(object):
     """
     Lexer of our Interpreter
@@ -124,7 +125,7 @@ class Lexer(object):
         """
         ret = ''
         isReal = False
-        while self.currentChar is not None and self.currentChar.isdigit():
+        while self.currentChar is not None and self.currentChar.isdigit() or self.currentChar == '.':
             ret += str(self.currentChar)
             self.advanceRight()
 
@@ -156,7 +157,7 @@ class Lexer(object):
                 token = Token(EOF, None)
                 return token
 
-            if self.currentChar.isalpha():
+            elif self.currentChar.isalpha():
                 identifier = self.identifierToken()
                 # Return ID if identifier not keyword.
                 # We use upper to ignore case sensivity in keywords
@@ -167,72 +168,73 @@ class Lexer(object):
                     token = Token(ID, identifier)
                 return token
 
-            if self.currentChar.isdigit():
+            elif self.currentChar.isdigit():
                 token = self.handleNumbers()
                 return token
 
-            if self.currentChar == '{':
+            elif self.currentChar == '{':
                 self.handleComment()
-                self.advanceRight() # Move next char after "}"
+                #  Move next char after "}"
+                self.advanceRight()
                 continue
 
-            if self.currentChar == '(':
+            elif self.currentChar == '(':
                 token = Token(OP, None)
                 self.advanceRight()
                 return token
 
-            if self.currentChar == ')':
+            elif self.currentChar == ')':
                 token = Token(CP, None)
                 self.advanceRight()
                 return token
 
-            if self.currentChar == '+':
+            elif self.currentChar == '+':
                 token = Token(PLUS, self.currentChar)
                 self.advanceRight()
                 return token
 
-            if self.currentChar == '-':
+            elif self.currentChar == '-':
                 token = Token(MINUS, self.currentChar)
                 self.advanceRight()
                 return token
 
-            if self.currentChar == '*':
+            elif self.currentChar == '*':
                 token = Token(MUL, self.currentChar)
                 self.advanceRight()
                 return token
 
-            if self.currentChar == '/':
+            elif self.currentChar == '/':
                 token = Token(DIV, self.currentChar)
                 self.advanceRight()
                 return token
 
-            if self.currentChar == '.':
+            elif self.currentChar == '.':
                 token = Token(DOT, self.currentChar)
                 self.advanceRight()
                 return token
 
-            if self.currentChar == ';':
+            elif self.currentChar == ';':
                 token = Token(SEMICOLON, self.currentChar)
                 self.advanceRight()
                 return token
-
-            if self.currentChar == ':':
-                token = Token(COLON, self.currentChar)
-                self.advanceRight()
-                return token
-
-            if self.currentChar == ';':
-                token = Token(COMMA, self.currentChar)
-                self.advanceRight()
-                return token
-
-            if self.currentChar == ':' and self.peekRight() == '=':
+            
+            elif self.currentChar == ':' and self.peekRight() == '=':
                 token = Token(ASSIGN, ":=")
                 self.advanceRight()
                 self.advanceRight()
                 return token
 
-            if self.currentChar == ' ':
+            elif self.currentChar == ':':
+                token = Token(COLON, self.currentChar)
+                self.advanceRight()
+                return token
+
+            elif self.currentChar == ',':
+                token = Token(COMMA, self.currentChar)
+                self.advanceRight()
+                return token
+
+            elif self.currentChar == ' ':
                 self.advanceRight()
                 continue
 
@@ -240,6 +242,7 @@ class Lexer(object):
 
 # PARSER ==========================================
 # This classes are ASC tree node definitions.
+
 
 class ProgramNode(object):
     """
@@ -265,9 +268,9 @@ class VarDeclarationNode(object):
     This node uses for variable declarations in
     very beginning of the program
     """
-    def __init__(self, value, valueType):
-        self.value = value
-        self.valueType = valueType
+    def __init__(self, VariableNode, variableType):
+        self.variable = VariableNode
+        self.variableType = variableType
 
 
 class CompoundNode(object):
@@ -370,7 +373,8 @@ class Parser(object):
              \
               2(NumNode)
 
-    Example =   BEGIN BEGIN number := 2; a := number; b := 10 * a + 10 * number / 4; c := a - - b END; x := 11; END.
+    Example = BEGIN BEGIN number := 2; a := number;
+     b := 10 * a + 10 * number / 4; c := a - - b END; x := 11; END.
     Tree =
 
                                          Compound _____
@@ -418,12 +422,14 @@ class Parser(object):
         BNF rule
             Expr ->     Term | Expr + Term | Expr – Term
             Term ->     Factor | Term * Factor | Term / Factor
-            Factor ->   (PLUS|MINUS)Factor | Literal | Identifier | (Expr) | variable
+            Factor ->
+                (PLUS|MINUS)Factor | Literal | Identifier | (Expr) | variable
 
         RegEx equivalent
             Expr ->     (Term | Expr + Term | Expr - Term)
             Term ->     (Factor | Term * Factor | Term / Factor)
-            Factor ->   ((PLUS|MINUS)Factor | Literal | Identifier | (Expr) | variable
+            Factor ->
+                ((PLUS|MINUS)Factor | Literal | Identifier | (Expr) | variable
 
         The main logic in the following three function we try to
         find split our Tokens to Expr Term and Factor
@@ -455,6 +461,10 @@ class Parser(object):
 
         if self.currentToken.tokenType == INTNUM:
             self.eatToken(INTNUM)
+            literalNode = NumNode(token.value)
+
+        elif self.currentToken.tokenType == REALNUM:
+            self.eatToken(REALNUM)
             literalNode = NumNode(token.value)
 
         elif self.currentToken.tokenType == PLUS:
@@ -563,12 +573,45 @@ class Parser(object):
         self.eatToken(END)
         return root
 
-    def declaration(self):
-        varDeclaration = self.varDeclaration()
-        return varDeclaration
+    def varDeclaration(self):
+        varList = []
+        while True:
+            varList.append(self.currentToken.value)
+            self.eatToken(ID)
+            if self.currentToken.tokenType == COMMA:
+                self.eatToken(COMMA)
+                continue
+            self.eatToken(COLON)
+            if self.currentToken.tokenType == INTEGER:
+                varDecNodes = \
+                    [VarDeclarationNode(VariableNode(var), INTEGER) for var in varList]
+                self.eatToken(INTEGER)
+            else:
+                varDecNodes = \
+                    [VarDeclarationNode(VariableNode(var), REAL) for var in varList]
+                self.eatToken(REAL)
+            break
+
+        return varDecNodes
+
+    def declarations(self):
+        declarationList = []
+        # check if there is no declaration block
+        if self.currentToken.tokenType == VAR:
+            self.eatToken(VAR)
+
+            while True:
+                varDecNodes = self.varDeclaration()
+                declarationList.append(varDecNodes)
+                self.eatToken(SEMICOLON)
+
+                if self.currentToken.tokenType != ID:
+                    break
+
+        return declarationList
 
     def block(self):
-        declarations = self.declaration()
+        declarations = self.declarations()
         compounds = self.compound()
         blockNode = BlockNode(declarations, compounds)
         return blockNode
@@ -576,6 +619,7 @@ class Parser(object):
     def program(self):
         self.eatToken(PROGRAM)
         progName = self.variable().variable
+        self.eatToken(SEMICOLON)
         blockNode = self.block()
         root = ProgramNode(progName, blockNode)
         self.eatToken(DOT)
@@ -612,7 +656,17 @@ class Interpreter(object):
         If binary calculate the expression
         If unary change numbers' s sign
         """
-        if type(rootNode) == CompoundNode:
+        if type(rootNode) == ProgramNode:
+            self.traverseTree(rootNode.block)
+
+        elif type(rootNode) == BlockNode:
+            [self.traverseTree(varDeclaration) for declaration in rootNode.declarations for varDeclaration in declaration]
+            self.traverseTree(rootNode.compounds)
+
+        elif type(rootNode) == VarDeclarationNode:
+            pass
+
+        elif type(rootNode) == CompoundNode:
             [self.traverseTree(statement) for statement in rootNode.childs]
 
         elif type(rootNode) == AssignmentNode:
