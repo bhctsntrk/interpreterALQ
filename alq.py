@@ -217,7 +217,7 @@ class Lexer(object):
                 token = Token(SEMICOLON, self.currentChar)
                 self.advanceRight()
                 return token
-            
+
             elif self.currentChar == ':' and self.peekRight() == '=':
                 token = Token(ASSIGN, ":=")
                 self.advanceRight()
@@ -350,6 +350,35 @@ class UnaryNode(object):
     def __init__(self, operator, child):
         self.opToken = operator
         self.childToken = child
+
+
+class Symbol(object):
+    def __init__(self, name, type):
+        self.name = name
+        self.type = type
+
+
+class BuiltInSymbol(Symbol):
+    def __init__(self, name):
+        self.name = name
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class VarSymbol(Symbol):
+    def __init__(self, name, type):
+        self.name = name
+        self.type = type
+
+    def __str__(self):
+        return "<{name}, {type}>".format(name=self.name, type=self.type)
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class Parser(object):
