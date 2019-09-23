@@ -381,6 +381,92 @@ class VarSymbol(Symbol):
         return self.__str__()
 
 
+class SymbolTable(object):
+    """
+    With symbol tables we can check Assignment Variable NameError
+    and Type Error before interpret the code so before run-time.
+    """
+    def __init__(self):
+        self.symbols = {}
+        self.defineSymbol(BuiltInSymbol(INTEGER))
+        self.defineSymbol(BuiltInSymbol(REAL))
+
+    def __str__(self):
+        return "Symbols: {symbols}".format(
+            symbols=[symbol for symbol in self.symbols.values()]
+        )
+
+    def __repr__(self):
+        return self.__str__()
+
+    def defineSymbol(self, symbol):
+        self.symbols[symbol.name] = symbol
+
+    def checkSymbol(self, symbolName):
+        if symbolName in self.symbols:
+            return self.symbols[symbolName]
+        else:
+            return None
+
+
+class SymbolTableBuilder():
+    """
+    After parser build our AST tree we traverse with 
+    SymbolTableBuilder Before Interpreter and check
+    Variable Declaration block. Because this block
+    contains variable declarations we can create
+    a symbol tree from here.
+    """
+    def __init__(self):
+        self.symbolTable = SymbolTable()
+
+    def traverseTree(self, rootNode):
+
+        if type(rootNode) == ProgramNode:
+            self.traverseTree(rootNode.block)
+
+        elif type(rootNode) == BlockNode:
+            [self.traverseTree(varDeclaration) for declaration in rootNode.declarations for varDeclaration in declaration]
+            self.traverseTree(rootNode.compounds)
+
+        elif type(rootNode) == VarDeclarationNode:
+            """
+            We build symbols in here
+            """
+            typeName = rootNode.variableType
+            typeSymbol = self.symbolTable.checkSymbol(typeName)
+            VariableName = rootNode.variable.variable
+            variableSymbol = VarSymbol(VariableName, typeSymbol)
+            self.symbolTable.defineSymbol(variableSymbol)
+
+        elif type(rootNode) == CompoundNode:
+            [self.traverseTree(statement) for statement in rootNode.childs]
+
+        elif type(rootNode) == AssignmentNode:
+            variableName = rootNode.left.variable
+            variableSymbol = self.symbolTable.checkSymbol(variableName)
+
+            if variableSymbol is None:
+                raise NameError(repr(variableName))
+
+        elif type(rootNode) == VariableNode:
+            variableName = rootNode.variable
+            variableSymbol = self.symbolTable.checkSymbol(variableName)
+
+            if variableSymbol is None:
+                raise NameError(repr(variableName))
+
+        elif type(rootNode) == BinaryNode:
+            self.traverseTree(rootNode.lNode)
+            self.traverseTree(rootNode.rNode)
+
+        elif type(rootNode) == UnaryNode:
+            self.traverseTree(rootNode.childToken)
+
+        else:
+            pass
+
+
 class Parser(object):
     """
     Parser of our Interpreter
@@ -747,7 +833,13 @@ class Interpreter(object):
 
     def interpret(self):
         rootNode = self.parser.parse()
-        self.traverseTree(rootNode)
+
+        symbolTablebuilder = SymbolTableBuilder()
+        symbolTablebuilder.traverseTree(rootNode) # Check vars before run time
+        print('\nSymbol Table:')
+        print(symbolTablebuilder.symbolTable)
+
+        self.traverseTree(rootNode) # run time here
 
 
 def main():
