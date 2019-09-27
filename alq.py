@@ -23,6 +23,7 @@ ASSIGN = "ASSIGN"
 SEMICOLON = "SEMICOLON"
 PROGRAM = "PROGRAM"
 VAR = "VAR"
+PROCEDURE = "PROCEDURE"
 
 # KEYWORDS
 KEYWORDS = {
@@ -32,7 +33,8 @@ KEYWORDS = {
     "PROGRAM": PROGRAM,
     "VAR": VAR,
     "INTEGER": INTEGER,
-    "REAL": REAL
+    "REAL": REAL,
+    "PROCEDURE": PROCEDURE
 }
 
 
@@ -273,6 +275,14 @@ class VarDeclarationNode(object):
         self.variableType = variableType
 
 
+class ProcedureDeclarationNode(object):
+    """
+    We use this to define Procedure Declarations
+    """
+    def __init__(self, name, innerBlockNode):
+        self.name = name
+        self.innerBlockNode = innerBlockNode
+
 class CompoundNode(object):
     """
     Compound Node contains a list consist from statements.
@@ -438,6 +448,9 @@ class SymbolTableBuilder():
             VariableName = rootNode.variable.variable
             variableSymbol = VarSymbol(VariableName, typeSymbol)
             self.symbolTable.defineSymbol(variableSymbol)
+
+        elif type(rootNode) == ProcedureDeclarationNode:
+            pass
 
         elif type(rootNode) == CompoundNode:
             [self.traverseTree(statement) for statement in rootNode.childs]
@@ -722,6 +735,17 @@ class Parser(object):
 
                 if self.currentToken.tokenType != ID:
                     break
+        
+        if self.currentToken.tokenType == PROCEDURE:
+            self.eatToken(PROCEDURE)
+            procedureName = self.currentToken.value
+            self.eatToken(ID)
+            self.eatToken(SEMICOLON)
+            innerBlock = self.block()
+            procedureNode = ProcedureDeclarationNode(procedureName, innerBlock)
+            # ERROR WE NEED TO USE ANOTHER ARRAY BECAUSE OF VARDECLARATION
+            declarationList.append([procedureNode])
+            self.eatToken(SEMICOLON)
 
         return declarationList
 
@@ -779,6 +803,9 @@ class Interpreter(object):
             self.traverseTree(rootNode.compounds)
 
         elif type(rootNode) == VarDeclarationNode:
+            pass
+
+        elif type(rootNode) == ProcedureDeclarationNode:
             pass
 
         elif type(rootNode) == CompoundNode:
