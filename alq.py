@@ -279,9 +279,20 @@ class ProcedureDeclarationNode(object):
     """
     We use this to define Procedure Declarations
     """
-    def __init__(self, name, innerBlockNode):
+    def __init__(self, name, paramList, innerBlockNode):
         self.name = name
+        self.paramList = paramList
         self.innerBlockNode = innerBlockNode
+
+
+class Parameter():
+    """
+    This node used for defining procedure params
+    """
+    def __init__(self, paramName, paramType):
+        self.paramName = paramName
+        self.paramType = paramType
+
 
 class CompoundNode(object):
     """
@@ -583,6 +594,34 @@ class Parser(object):
         self.eatToken(END)
         return root
 
+    def parameters(self):
+        parameterNodes = []
+        paramNames = []
+        paramNames.append(self.currentToken.value)
+        self.eatToken(ID)
+        while self.currentToken.tokenType == COMMA:
+            self.eatToken(COMMA)
+            paramNames.append(self.currentToken.value)
+            self.eat(ID)   
+        paramType = self.currentToken.value
+        if self.currentToken.tokenType == INTEGER:
+            self.eatToken(INTEGER)
+        else:
+            self.eatToken(REAL)
+        for i in paramNames:
+            parameterNodes.append(Parameter(i, paramType))
+        return parameterNodes
+
+    def parameterList(self):
+        if self.currentToken.tokenType != ID:
+            return []  # procedure Foo();
+        parameters = []
+        parameters = self.parameters()
+        if self currentToken == SEMICOLON:
+            self.eatToken(SEMICOLON)
+            [parameters.append(i) for i in self.parameterList()]
+        return parameters
+
     def varDeclaration(self):
         varList = []
         while True:
@@ -622,9 +661,12 @@ class Parser(object):
             self.eatToken(PROCEDURE)
             procedureName = self.currentToken.value
             self.eatToken(ID)
+            self.eatToken(OP)
+            paramList = self.parameterList()
+            self.eatToken(CP)
             self.eatToken(SEMICOLON)
             innerBlock = self.block()
-            procedureNode = ProcedureDeclarationNode(procedureName, innerBlock)
+            procedureNode = ProcedureDeclarationNode(procedureName, paramList, innerBlock)
             # ERROR WE NEED TO USE ANOTHER ARRAY BECAUSE OF VARDECLARATION
             declarationList.append([procedureNode])
             self.eatToken(SEMICOLON)
@@ -689,12 +731,16 @@ class SymbolTable(object):
     With symbol tables we can check Assignment Variable NameError
     and Type Error before interpret the code so before run-time.
     """
-    def __init__(self):
+    def __init__(self, scopeName, scopeLevel):
         self.symbols = {}
+        self.scopeName = scopeName
+        self.scopeLevel = scopeLevel
         self.defineSymbol(BuiltInSymbol(INTEGER))
         self.defineSymbol(BuiltInSymbol(REAL))
 
     def __str__(self):
+        print("Scope Name", self.scopeName)
+        print("Scope Level", self.scopeLevel)
         return "Symbols: {symbols}".format(
             symbols=[symbol for symbol in self.symbols.values()]
         )
@@ -718,7 +764,7 @@ class SymbolTable(object):
             return None
 
 
-class SymbolTableBuilder():
+class SemanticAnalyzer():
     """
     After parser build our AST tree we traverse with 
     SymbolTableBuilder Before Interpreter and check
@@ -727,7 +773,7 @@ class SymbolTableBuilder():
     a symbol tree from here.
     """
     def __init__(self):
-        self.symbolTable = SymbolTable()
+        self.symbolTable = SymbolTable(scopeName="global", scopeLevel=1)
 
     def traverseTree(self, rootNode):
 
@@ -872,10 +918,10 @@ class Interpreter(object):
     def interpret(self):
         rootNode = self.parser.parse()
 
-        symbolTablebuilder = SymbolTableBuilder()
-        symbolTablebuilder.traverseTree(rootNode) # Check vars before run time
+        semanticAnalyzer = SemanticAnalyzer()
+        semanticAnalyzer.traverseTree(rootNode) # Check vars before run time
         print('\nSymbol Table:')
-        print(symbolTablebuilder.symbolTable)
+        print(semanticAnalyzer.symbolTable)
 
         self.traverseTree(rootNode) # run time here
 
