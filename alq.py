@@ -37,8 +37,13 @@ KEYWORDS = {
     "PROCEDURE": PROCEDURE
 }
 
-
-# LEXER ==========================================
+"""
+____________________________________________________________________
+| LEXER ========================================================== |
+| Lexer is do Tokenizing. Take the main code(input)                |
+| then generate Tokens from the input                              |
+L-------------------------------------------------------------------
+"""
 
 
 class Token(object):
@@ -242,13 +247,31 @@ class Lexer(object):
 
             self.error("unknown")
 
-# PARSER ==========================================
-# This classes are ASC tree node definitions.
+
+"""
+_______________________________________________________________________
+| PARSER ==========================================================    |
+| Parser is our main analyzer that take token stream from Lexer        |
+| then try to generate valid expressions and calculations.             |
+| It's output a AST Tree that made from those valid expressions        |
+| There is also a syntax diagram as BNF that tell us grammar structure |
+| Every Non-Terminal in that diagram has a method in parser that       |
+| creates and builds AST Tree and it's nodes                           |
+L----------------------------------------------------------------------
+"""
+
+
+"""
+AST Tree Node Types Definitions.
+This Nodes will be used to express calculations.
+There can be a lot of them or none of them in a AST TreeS
+"""
 
 
 class ProgramNode(object):
     """
     Main program root node. Contains program name and block node
+    Every AST Tree should have one.
     """
     def __init__(self, progName, block):
         self.name = progName
@@ -277,7 +300,10 @@ class VarDeclarationNode(object):
 
 class ProcedureDeclarationNode(object):
     """
-    We use this to define Procedure Declarations
+    To define Procedure Declarations in AST Tree
+    we need this. Every Precodure has a name
+    and some parameters(maybe not) and an inner
+    code block
     """
     def __init__(self, name, paramList, innerBlockNode):
         self.name = name
@@ -288,6 +314,8 @@ class ProcedureDeclarationNode(object):
 class Parameter():
     """
     This node used for defining procedure params
+    Every parameter has a name and a type like
+    Variables
     """
     def __init__(self, paramName, paramType):
         self.paramName = paramName
@@ -296,7 +324,11 @@ class Parameter():
 
 class CompoundNode(object):
     """
-    Compound Node contains a list consist from statements.
+    Compound Node contains a list that consist from statements.
+    Statements are something like this a=5;
+    or b = a + c;
+    They finished with COMMA except the last statement before END
+    keyword. It does not need a COMMA
     """
     def __init__(self, statementNodes):
         self.childs = statementNodes
@@ -325,7 +357,7 @@ class VariableNode(object):
 
 class EmptyNode(object):
     """
-    Defines empty compound like BEGIN END
+    To defines empty program or compound
     """
     def __init__(self):
         pass
@@ -373,42 +405,57 @@ class UnaryNode(object):
         self.childToken = child
 
 
+"""
+MAIN SYNTAX DIAGRAM FOR PARSER ========================================
+
+    program : PROGRAM variable SEMI block DOT
+
+    block : declarations compound
+
+    declarations : VAR (varDeclaration SEMI)+
+                 | (PROCEDURE ID SEMI block SEMI)*
+                 | empty
+
+    varDeclaration : ID (COMMA ID)* COLON (INTEGER | REAL)
+
+    compound : BEGIN statementList END
+
+    statementList : statement
+                   | statement SEMI statementList
+
+    statement : compound
+              | assignment
+              | empty
+
+    assignment : variable ASSIGN expr
+
+    empty :
+
+    expr : term ((PLUS | MINUS) term)*
+
+    term : factor ((MUL | INTDIV | DIV) factor)*
+
+    factor : PLUS factor
+           | MINUS factor
+           | INT
+           | REAL
+           | OP expr CP
+           | variable
+
+    variable: ID
+
+"""
+
+
 class Parser(object):
     """
     Parser of our Interpreter
-    Check and calculate expressions. She uses
-    lexer to split up the text(code snippet)
-    then cheks the Tokens orders if they are
-    true expressions and calculable or not.
-
-    Then she creates an ASC Tree and return it
-
-    Example =   1 + (3 + (-2))
-    Tree =
-
-        +(BinaryNode)
-       / \
-      1   +(BinaryNode)
-         / \
-        3  UNARY(-)
-             \
-              2(NumNode)
-
-    Example = BEGIN BEGIN number := 2; a := number;
-     b := 10 * a + 10 * number / 4; c := a - - b END; x := 11; END.
-    Tree =
-
-                                         Compound _____
-                                            /    \     \
-                                   Compound       \    |
-                                 /                 /   \
-                                                  :=    EmptyNode
-                                                  / \
-                                                 x  11
-
 
     self.lexer = Lexer to get Tokens
     self.currentToken ==> Current Token
+
+    currentToken is very important that we use
+    too much when create the AST tree
     """
     def __init__(self, lexer):
         self.lexer = lexer
@@ -430,8 +477,85 @@ class Parser(object):
         else:
             self.error("wrongExp")
 
+    def variable(self):
+        """
+        variable: ID
+
+        Returns a variable node that contains variable name
+        """
+        variableNode = VariableNode(self.currentToken.value)
+        self.eatToken(ID)
+        return variableNode
+
     def factor(self):
         """
+        factor : PLUS factor
+               | MINUS factor
+               | INT
+               | REAL
+               | OP expr CP
+               | variable
+
+        Factor is one of the main non-terminal in a statement
+        normaly it is just a number or a variable
+        """
+        resultNode = None
+        token = self.currentToken
+
+        if self.currentToken.tokenType == INTNUM:
+            self.eatToken(INTNUM)
+            resultNode = NumNode(token.value)
+
+        elif self.currentToken.tokenType == REALNUM:
+            self.eatToken(REALNUM)
+            resultNode = NumNode(token.value)
+
+        elif self.currentToken.tokenType == PLUS:
+            self.eatToken(PLUS)
+            resultNode = UnaryNode(token, self.factor())
+
+        elif self.currentToken.tokenType == MINUS:
+            self.eatToken(MINUS)
+            resultNode = UnaryNode(token, self.factor())
+
+        # Call expression again Factor ->   (Literal | Identifier | (Expr))
+        #                                                              ^
+        elif self.currentToken.tokenType == OP:
+            self.eatToken(OP)
+            resultNode = self.expression()
+            self.eatToken(CP)
+
+        elif self.currentToken.tokenType == ID:
+            resultNode = self.variable()
+
+        return resultNode
+
+    def term(self):
+        """
+        term : factor ((MUL | INTDIV | DIV) factor)*
+
+        For sake of precedence level we need more non-terminals
+        Expression and Term is not different actually
+        """
+        resultNode = self.factor()
+
+        while self.currentToken.tokenType in [MUL, INTDIV, DIV]:
+            token = self.currentToken
+            if token.tokenType == MUL:
+                self.eatToken(MUL)
+            elif token.tokenType == DIV:
+                self.eatToken(DIV)
+            elif token.tokenType == INTDIV:
+                self.eatToken(INTDIV)
+
+            resultNode = BinaryNode(resultNode, token, self.factor())
+
+        return resultNode
+
+    def expression(self):
+        """
+        expr : term ((PLUS | MINUS) term)*
+
         Some operators have higher precedence so we need a
         non-terminal for every precedence level.
 
@@ -446,114 +570,39 @@ class Parser(object):
             Factor ->
                 (PLUS|MINUS)Factor | Literal | Identifier | (Expr) | variable
 
-        RegEx equivalent
-            Expr ->     (Term | Expr + Term | Expr - Term)
-            Term ->     (Factor | Term * Factor | Term / Factor)
-            Factor ->
-                ((PLUS|MINUS)Factor | Literal | Identifier | (Expr) | variable
-
-        The main logic in the following three function we try to
-        find split our Tokens to Expr Term and Factor
-
-        For 2+3+4
-
-        We think 2 is Literal and 2+ is a Term
-        after following Tokens after 2+ all of then are another Term
-
-          2 +       3 + 4 .....bla bla
-          - -       - - - ------
-          F F       F F F FFFFFFF
-        -------    --------------------
-          Term          Term
-        -------------------------------
-                Expr
-
-        There are infinite possobilities after 2+
-        so we put it in a while loop everthing
-        need to be calculated. After calculation complete we add value to 2
-
         Plus Minus can be founded in Term function
         Mul Div can be founded in Expr function
         because Mul and Div has priority
-
         """
-        literalNode = None
-        token = self.currentToken
-
-        if self.currentToken.tokenType == INTNUM:
-            self.eatToken(INTNUM)
-            literalNode = NumNode(token.value)
-
-        elif self.currentToken.tokenType == REALNUM:
-            self.eatToken(REALNUM)
-            literalNode = NumNode(token.value)
-
-        elif self.currentToken.tokenType == PLUS:
-            self.eatToken(PLUS)
-            literalNode = UnaryNode(token, self.factor())
-
-        elif self.currentToken.tokenType == MINUS:
-            self.eatToken(MINUS)
-            literalNode = UnaryNode(token, self.factor())
-
-        # Call expression again Factor ->   (Literal | Identifier | (Expr))
-        #                                                              ^
-        elif self.currentToken.tokenType == OP:
-            self.eatToken(OP)
-            literalNode = self.expression()
-            self.eatToken(CP)
-
-        elif self.currentToken.tokenType == ID:
-            literalNode = self.variable()
-
-        return literalNode
-
-    def term(self):
-        resultNode = self.factor()
-
-        while self.currentToken.tokenType is not EOF:
-            token = self.currentToken
-            if token.tokenType == MUL:
-                self.eatToken(MUL)
-            elif token.tokenType == DIV:
-                self.eatToken(DIV)
-            elif token.tokenType == INTDIV:
-                self.eatToken(INTDIV)
-            else:
-                break
-
-            resultNode = BinaryNode(resultNode, token, self.factor())
-
-        return resultNode
-
-    def expression(self):
         resultNode = self.term()
 
-        while self.currentToken.tokenType is not EOF:
+        while self.currentToken.tokenType in [PLUS, MINUS]:
             token = self.currentToken
             if token.tokenType == PLUS:
                 self.eatToken(PLUS)
             elif token.tokenType == MINUS:
                 self.eatToken(MINUS)
-            # Break the expression and force to return a value
-            else:
-                break
 
             resultNode = BinaryNode(resultNode, token, self.term())
 
         return resultNode
 
     def empty(self):
-        # Empty Node
+        """
+        empty :
+
+        Some non-terminals can be empty so we need this
+        there will be error otherwise for
+        Program a; Begin End.
+        """
         return EmptyNode()
 
-    def variable(self):
-        # Return a variable node
-        variableNode = VariableNode(self.currentToken.value)
-        self.eatToken(ID)
-        return variableNode
-
     def assignment(self):
+        """
+        assignment : variable ASSIGN expr
+
+        We assign numbers to variables here
+        """
         variableNode = self.variable()
         assignOp = self.currentToken.value
         self.eatToken(ASSIGN)
@@ -564,6 +613,19 @@ class Parser(object):
         return assignmentNode
 
     def statement(self):
+        """
+        statement : compound
+                  | assignment
+                  | empty
+
+        Statements are normally look like this
+        a := 5; or b := a + c;
+        However there can be no assignment or
+        there can be inner compound that starts with
+        BEGIN so we handle this situation too in here.
+
+        There can be nested BEGIN END's in code
+        """
         if self.currentToken.tokenType == ID:
             assignmentNode = self.assignment()
             return assignmentNode
@@ -575,7 +637,16 @@ class Parser(object):
         else:
             return EmptyNode()
 
-    def statement_list(self):
+    def statementList(self):
+        """
+        statementList : statement
+                      | statement SEMI statement_list
+
+        There can be infinite statements in one compund
+        We use aother non-terminal for this.
+        We can use this too
+        compound : BEGIN (statement)* END
+        """
         statementNodes = []
 
         statementNodes.append(self.statement())
@@ -583,18 +654,34 @@ class Parser(object):
             self.eatToken(SEMICOLON)
             statementNodes.append(self.statement())
 
-        if self.currentToken.tokenType is ID:
-            self.error("wrongExp")
-
         return statementNodes
 
     def compound(self):
+        """
+        compound : BEGIN statementList END
+
+        There are two part in Block non-terminal
+        One is Declaration Part and other is compund
+        part tha contains main code.
+
+        """
         self.eatToken(BEGIN)
-        root = CompoundNode(self.statement_list())
+        root = CompoundNode(self.statementList())
         self.eatToken(END)
         return root
 
     def parameters(self):
+        """
+        parameters : ID (COMMA ID)* COLON (INTEGER | REAL)
+
+        Because of pascal's design we need to split a part
+        the parameter definition.
+        foo (a, b : INTEGER; c : REAL;)
+            ---------------  ---------
+            parameters       parameters
+            --------------------------
+                 parameterList
+        """
         parameterNodes = []
         paramNames = []
         paramNames.append(self.currentToken.value)
@@ -602,7 +689,7 @@ class Parser(object):
         while self.currentToken.tokenType == COMMA:
             self.eatToken(COMMA)
             paramNames.append(self.currentToken.value)
-            self.eat(ID)   
+            self.eat(ID)
         paramType = self.currentToken.value
         if self.currentToken.tokenType == INTEGER:
             self.eatToken(INTEGER)
@@ -613,8 +700,15 @@ class Parser(object):
         return parameterNodes
 
     def parameterList(self):
+        """
+        parameterList : parameters
+                      | parameters SEMI parameterList
+
+        Parammeters and Procedure Declarations are part of
+        Declaration non-terminal.
+        """
         if self.currentToken.tokenType != ID:
-            return []  # procedure Foo();
+            return []  # Function with no param
         parameters = []
         parameters = self.parameters()
         if self currentToken == SEMICOLON:
@@ -623,6 +717,12 @@ class Parser(object):
         return parameters
 
     def varDeclaration(self):
+        """
+        varDeclaration : ID (COMMA ID)* COLON (INTEGER | REAL)
+
+        Variable Declaration another part of Declaration non-terminal
+        Variables defined in this block.
+        """
         varList = []
         while True:
             varList.append(self.currentToken.value)
@@ -644,6 +744,15 @@ class Parser(object):
         return varDecNodes
 
     def declarations(self):
+        """
+        declarations : (VAR (varDeclaration SEMI)+)*
+                     | (PROCEDURE ID (OP parameterList CP)? SEMI block SEMI)*
+                     | empty
+
+        Declaration one of the main non-terminal in block non-terminal
+        Declaration + Compund = Block
+        Variable declarations and procedure declarations done in here
+        """
         declarationList = []
         # check if there is no declaration block
         if self.currentToken.tokenType == VAR:
@@ -656,7 +765,7 @@ class Parser(object):
 
                 if self.currentToken.tokenType != ID:
                     break
-        
+
         if self.currentToken.tokenType == PROCEDURE:
             self.eatToken(PROCEDURE)
             procedureName = self.currentToken.value
@@ -674,12 +783,22 @@ class Parser(object):
         return declarationList
 
     def block(self):
+        """
+        block : declarations compound
+
+        Block is main body of program
+        """
         declarations = self.declarations()
         compounds = self.compound()
         blockNode = BlockNode(declarations, compounds)
         return blockNode
 
     def program(self):
+        """
+        program : PROGRAM variable SEMI block DOT
+
+        Main program starts with PROGRAM and ends with DOT
+        """
         self.eatToken(PROGRAM)
         progName = self.variable().variable
         self.eatToken(SEMICOLON)
@@ -692,18 +811,41 @@ class Parser(object):
         return self.program()
 
 
-# Semantic Analyzer ===============================
-# Semantic Analyzer analyze the AST tree before run-time
-# then create Symbol Table and check some errors that parser
-# can't check like nameDefineError
+"""
+_______________________________________________________________________
+| SEMANTIC ANALYZER ===============================================    |
+| Semantic Analyzer analyze the AST tree before run-time.              |
+| Get AST Tree from Parser                                             |
+| then create Symbol Table and check some errors that parser           |
+| can't check like nameDefineError                                     |
+L----------------------------------------------------------------------
+"""
+
+
+"""
+Symbols Definitions.
+Symbols are define the variables, built-ins, keywords
+Before RunTime(Interpreting) we traverse the AST Tree
+and find all variable declarations. Then we create a
+symbols and put them together in a symbol table.
+If there is undefined name error we can catch with
+this semantic analyze thing
+"""
+
 
 class Symbol(object):
+    """
+    Symbol definiton.
+    """
     def __init__(self, name, type):
         self.name = name
         self.type = type
 
 
 class BuiltInSymbol(Symbol):
+    """
+    Definition for Built In Symbol
+    """
     def __init__(self, name):
         self.name = name
 
@@ -715,6 +857,9 @@ class BuiltInSymbol(Symbol):
 
 
 class VarSymbol(Symbol):
+    """
+    Definition for Variable Symbol
+    """
     def __init__(self, name, type):
         self.name = name
         self.type = type
@@ -728,8 +873,9 @@ class VarSymbol(Symbol):
 
 class SymbolTable(object):
     """
-    With symbol tables we can check Assignment Variable NameError
-    and Type Error before interpret the code so before run-time.
+    We create symbol tables from symbols in this class
+    Scoping feature comes with procedures and their parameters
+    controlled in this section.
     """
     def __init__(self, scopeName, scopeLevel):
         self.symbols = {}
@@ -749,13 +895,16 @@ class SymbolTable(object):
         return self.__str__()
 
     def defineSymbol(self, symbol):
+        """
+        Add symbol to table
+        """
         self.symbols[symbol.name] = symbol
 
     def checkSymbol(self, symbolName):
         """
-        he process of mapping a variable reference 
-        to its declaration is 
-        called name resolution. And here is our lookup 
+        The process of mapping a variable reference
+        to its declaration is called name
+        resolution. And here is our checkSymbol
         method that does just that, name resolution:
         """
         if symbolName in self.symbols:
@@ -766,8 +915,8 @@ class SymbolTable(object):
 
 class SemanticAnalyzer():
     """
-    After parser build our AST tree we traverse with 
-    SymbolTableBuilder Before Interpreter and check
+    After parser build our AST tree, we traverse with
+    SemanticAnalyzer before Interpreter and check
     Variable Declaration block. Because this block
     contains variable declarations we can create
     a symbol tree from here.
@@ -776,7 +925,11 @@ class SemanticAnalyzer():
         self.symbolTable = SymbolTable(scopeName="global", scopeLevel=1)
 
     def traverseTree(self, rootNode):
-
+        """
+        We traverse tree in here recursively
+        Our target is catching the variable declarations
+        and and name errors
+        """
         if type(rootNode) == ProgramNode:
             self.traverseTree(rootNode.block)
 
@@ -824,7 +977,15 @@ class SemanticAnalyzer():
         else:
             pass
 
-# INTERPRETER ===================================
+"""
+_______________________________________________________________________
+| INTERPRETER =====================================================    |
+| The main interpreter.                                                |
+| After AST Tree builded and Semantic Analyze Completed, Run time begun|
+| Interpreter traverse the tree and do calculations and change vars    |
+| If tere is special functions like write to screen do that things     |
+L----------------------------------------------------------------------
+"""
 
 
 class Interpreter(object):
@@ -847,10 +1008,7 @@ class Interpreter(object):
     def traverseTree(self, rootNode):
         """
         This function traverse the tree in postorder
-        Get root node as param and check the type
-        if NumNode just return the value
-        If binary calculate the expression
-        If unary change numbers' s sign
+        recursively.
         """
         if type(rootNode) == ProgramNode:
             self.traverseTree(rootNode.block)
@@ -919,11 +1077,11 @@ class Interpreter(object):
         rootNode = self.parser.parse()
 
         semanticAnalyzer = SemanticAnalyzer()
-        semanticAnalyzer.traverseTree(rootNode) # Check vars before run time
+        semanticAnalyzer.traverseTree(rootNode)
         print('\nSymbol Table:')
         print(semanticAnalyzer.symbolTable)
 
-        self.traverseTree(rootNode) # run time here
+        self.traverseTree(rootNode)
 
 
 def main():
