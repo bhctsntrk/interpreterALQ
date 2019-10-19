@@ -690,6 +690,9 @@ class Parser(object):
             self.eatToken(COMMA)
             paramNames.append(self.currentToken.value)
             self.eat(ID)
+
+        self.eatToken(COLON)
+
         paramType = self.currentToken.value
         if self.currentToken.tokenType == INTEGER:
             self.eatToken(INTEGER)
@@ -955,7 +958,6 @@ class SemanticAnalyzer():
     """
     def __init__(self):
         self.currentScope = None
-        # self.symbolTable = SymbolTable(scopeName="global", scopeLevel=1)
 
     def traverseTree(self, rootNode):
         """
@@ -974,7 +976,7 @@ class SemanticAnalyzer():
                 scopeLevel=1,
                 parentScope=self.currentScope  # None
             )
-
+            self.currentScope = globalScope
             self.traverseTree(rootNode.block)
 
             print(globalScope)
@@ -993,12 +995,12 @@ class SemanticAnalyzer():
             raises error
             """
             typeName = rootNode.variableType
-            typeSymbol = self.symbolTable.checkSymbol(typeName)
+            typeSymbol = self.currentScope.checkSymbol(typeName)
             VariableName = rootNode.variable.name
             variableSymbol = VarSymbol(VariableName, typeSymbol)
 
             if self.currentScope.checkSymbol(symbolName=VariableName, onlyCurrentScope=True):
-                raise Exception("Error: Duplicate identifier '{name}' found".format(VariableName))
+                raise Exception("Error: Duplicate identifier '{name}' found".format(name=VariableName))
 
             self.currentScope.defineSymbol(variableSymbol)
 
@@ -1013,7 +1015,7 @@ class SemanticAnalyzer():
             self.currentScope.defineSymbol(procedureSymbol)
 
             # Define scope
-            print("Entering scope = {sNmae} scope!".format(procedureName))
+            print("Entering scope = {scopeName} scope!".format(scopeName=procedureName))
             procedureScope = SymbolTable(
                 scopeName=procedureName,
                 scopeLevel=self.currentScope.scopeLevel + 1,
@@ -1032,14 +1034,14 @@ class SemanticAnalyzer():
             print(procedureScope)
 
             self.currentScope = self.currentScope.parentScope
-            print("Leaving scope = {sNmae} scope!".format(procedureName))
+            print("Leaving scope = {scopeName} scope!".format(scopeName=procedureName))
 
         elif type(rootNode) == CompoundNode:
             [self.traverseTree(statement) for statement in rootNode.childs]
 
         elif type(rootNode) == AssignmentNode:
-            variableName = rootNode.left.variable
-            variableSymbol = self.symbolTable.checkSymbol(variableName)
+            variableName = rootNode.left.name
+            variableSymbol = self.currentScope.checkSymbol(variableName)
 
             if variableSymbol is None:
                 raise NameError(repr(variableName))
@@ -1163,8 +1165,6 @@ class Interpreter(object):
 
         semanticAnalyzer = SemanticAnalyzer()
         semanticAnalyzer.traverseTree(rootNode)
-        print('\nSymbol Table:')
-        print(semanticAnalyzer.symbolTable)
 
         self.traverseTree(rootNode)
 
