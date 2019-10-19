@@ -136,7 +136,7 @@ class Lexer(object):
             ret += str(self.currentChar)
             self.advanceRight()
 
-            if self.currentChar is '.':
+            if self.currentChar == '.':
                 isReal = True
         if isReal:
             return Token(REALNUM, float(ret))
@@ -311,7 +311,7 @@ class ProcedureDeclarationNode(object):
         self.innerBlockNode = innerBlockNode
 
 
-class Parameter():
+class Parameter(object):
     """
     This node used for defining procedure params
     Every parameter has a name and a type like
@@ -352,7 +352,7 @@ class VariableNode(object):
     Defines variable node
     """
     def __init__(self, variable):
-        self.variable = variable
+        self.name = variable
 
 
 class EmptyNode(object):
@@ -711,7 +711,7 @@ class Parser(object):
             return []  # Function with no param
         parameters = []
         parameters = self.parameters()
-        if self currentToken == SEMICOLON:
+        if self.currentToken == SEMICOLON:
             self.eatToken(SEMICOLON)
             [parameters.append(i) for i in self.parameterList()]
         return parameters
@@ -800,7 +800,7 @@ class Parser(object):
         Main program starts with PROGRAM and ends with DOT
         """
         self.eatToken(PROGRAM)
-        progName = self.variable().variable
+        progName = self.variable().name
         self.eatToken(SEMICOLON)
         blockNode = self.block()
         root = ProgramNode(progName, blockNode)
@@ -817,7 +817,8 @@ _______________________________________________________________________
 | Semantic Analyzer analyze the AST tree before run-time.              |
 | Get AST Tree from Parser                                             |
 | then create Symbol Table and check some errors that parser           |
-| can't check like nameDefineError                                     |
+| can't check like nameDefineError.                                    |
+| The nested scopes also handle in Semantic Analyzer                   |
 L----------------------------------------------------------------------
 """
 
@@ -837,7 +838,7 @@ class Symbol(object):
     """
     Symbol definiton.
     """
-    def __init__(self, name, type):
+    def __init__(self, name, type=None):
         self.name = name
         self.type = type
 
@@ -846,6 +847,7 @@ class BuiltInSymbol(Symbol):
     """
     Definition for Built In Symbol
     """
+    # Use super instead of write lot of same code
     def __init__(self, name):
         self.name = name
 
@@ -860,6 +862,7 @@ class VarSymbol(Symbol):
     """
     Definition for Variable Symbol
     """
+    # Use super instead of write lot of same code
     def __init__(self, name, type):
         self.name = name
         self.type = type
@@ -871,22 +874,45 @@ class VarSymbol(Symbol):
         return self.__str__()
 
 
+class ProcedureSymbol(Symbol):
+    """
+    Definition of Procedure Symbol
+    Parameters need to be Variable Symbol
+    Remember Pascal Procedures not has type like int
+    Because they don't return something
+    """
+    def __init__(self, name, parameters=None):
+        super().__init__(name)
+        if parameters is None:
+            self.parameters = []
+        else:
+            self.parameters = parameters
+
+    def __str__(self):
+        return "<{name}, {parameters}>".format(
+            name=self.name,
+            parameters=self.parameters
+        )
+
+
 class SymbolTable(object):
     """
     We create symbol tables from symbols in this class
     Scoping feature comes with procedures and their parameters
     controlled in this section.
     """
-    def __init__(self, scopeName, scopeLevel):
+    def __init__(self, scopeName, scopeLevel, parentScope=None):
         self.symbols = {}
         self.scopeName = scopeName
         self.scopeLevel = scopeLevel
+        self.parentScope = parentScope
         self.defineSymbol(BuiltInSymbol(INTEGER))
         self.defineSymbol(BuiltInSymbol(REAL))
 
     def __str__(self):
-        print("Scope Name", self.scopeName)
+        print("/nScope Name", self.scopeName)
         print("Scope Level", self.scopeLevel)
+        print("Parent Scope", self.parentScope.scopeName if self.parentScope else None)
         return "Symbols: {symbols}".format(
             symbols=[symbol for symbol in self.symbols.values()]
         )
@@ -900,15 +926,21 @@ class SymbolTable(object):
         """
         self.symbols[symbol.name] = symbol
 
-    def checkSymbol(self, symbolName):
+    def checkSymbol(self, symbolName, onlyCurrentScope=False):
         """
         The process of mapping a variable reference
         to its declaration is called name
         resolution. And here is our checkSymbol
         method that does just that, name resolution:
+        Note:! The onlyCurrentScope is for to catch
+        error if some var defined more than one times
+        in same scope
         """
+        print('CheckSymbol: {}. (Scope name: {})'.format(symbolName, self.scopeName))
         if symbolName in self.symbols:
             return self.symbols[symbolName]
+        elif self.parentScope is not None and not onlyCurrentScope:
+            return self.parentScope.checkSymbol(symbolName)
         else:
             return None
 
@@ -922,16 +954,33 @@ class SemanticAnalyzer():
     a symbol tree from here.
     """
     def __init__(self):
-        self.symbolTable = SymbolTable(scopeName="global", scopeLevel=1)
+        self.currentScope = None
+        # self.symbolTable = SymbolTable(scopeName="global", scopeLevel=1)
 
     def traverseTree(self, rootNode):
         """
         We traverse tree in here recursively
         Our target is catching the variable declarations
-        and and name errors
+        and and name errors. And also we create nested scopes
+        here.
         """
         if type(rootNode) == ProgramNode:
+            """
+            Main program and global scope here
+            """
+            print("Entering scope = Global scope!")
+            globalScope = SymbolTable(
+                scopeName="global",
+                scopeLevel=1,
+                parentScope=self.currentScope  # None
+            )
+
             self.traverseTree(rootNode.block)
+
+            print(globalScope)
+
+            self.currentScope = self.currentScope.parentScope
+            print("Leaving scope = Global scope!")
 
         elif type(rootNode) == BlockNode:
             [self.traverseTree(varDeclaration) for declaration in rootNode.declarations for varDeclaration in declaration]
@@ -939,16 +988,51 @@ class SemanticAnalyzer():
 
         elif type(rootNode) == VarDeclarationNode:
             """
-            We build symbols in here
+            We create variable symbols in here
+            If the same var defined twice in same scope
+            raises error
             """
             typeName = rootNode.variableType
             typeSymbol = self.symbolTable.checkSymbol(typeName)
-            VariableName = rootNode.variable.variable
+            VariableName = rootNode.variable.name
             variableSymbol = VarSymbol(VariableName, typeSymbol)
-            self.symbolTable.defineSymbol(variableSymbol)
+
+            if self.currentScope.checkSymbol(symbolName=VariableName, onlyCurrentScope=True):
+                raise Exception("Error: Duplicate identifier '{name}' found".format(VariableName))
+
+            self.currentScope.defineSymbol(variableSymbol)
 
         elif type(rootNode) == ProcedureDeclarationNode:
-            pass
+            """
+            We define procedure nested scopes here
+            and insert parameters from node to that scope and
+            definition of procedureSymbol.parameters
+            """
+            procedureName = rootNode.name
+            procedureSymbol = ProcedureSymbol(procedureName)
+            self.currentScope.defineSymbol(procedureSymbol)
+
+            # Define scope
+            print("Entering scope = {sNmae} scope!".format(procedureName))
+            procedureScope = SymbolTable(
+                scopeName=procedureName,
+                scopeLevel=self.currentScope.scopeLevel + 1,
+                parentScope=self.currentScope)
+            self.currentScope = procedureScope
+
+            for parameter in rootNode.paramList:
+                parameterType = self.currentScope.checkSymbol(parameter.paramType)
+                parameterName = parameter.paramName
+                variableSymbol = VarSymbol(parameterName, parameterType)
+                self.currentScope.defineSymbol(variableSymbol)
+                procedureSymbol.parameters.append(variableSymbol)
+
+            self.traverseTree(rootNode.innerBlockNode)
+
+            print(procedureScope)
+
+            self.currentScope = self.currentScope.parentScope
+            print("Leaving scope = {sNmae} scope!".format(procedureName))
 
         elif type(rootNode) == CompoundNode:
             [self.traverseTree(statement) for statement in rootNode.childs]
@@ -961,8 +1045,8 @@ class SemanticAnalyzer():
                 raise NameError(repr(variableName))
 
         elif type(rootNode) == VariableNode:
-            variableName = rootNode.variable
-            variableSymbol = self.symbolTable.checkSymbol(variableName)
+            variableName = rootNode.name
+            variableSymbol = self.currentScope.checkSymbol(variableName)
 
             if variableSymbol is None:
                 raise NameError(repr(variableName))
@@ -976,6 +1060,7 @@ class SemanticAnalyzer():
 
         else:
             pass
+
 
 """
 _______________________________________________________________________
@@ -1097,6 +1182,7 @@ def main():
         interpreter = Interpreter(parser)
         interpreter.interpret()
         print(interpreter.variableStorage)
+
 
 if __name__ == '__main__':
     main()
