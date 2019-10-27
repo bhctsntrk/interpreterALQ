@@ -757,37 +757,45 @@ class Parser(object):
         Variable declarations and procedure declarations done in here
         """
         declarationList = []
-        # check if there is no declaration block
-        if self.currentToken.tokenType == VAR:
-            self.eatToken(VAR)
+        # There can be more than one var declaration
+        # or proc declaration in same scope
+        # like (var y : integer; var a : real;)
+        # So we need global loop
+        while True:
+            if self.currentToken.tokenType == VAR:
+                self.eatToken(VAR)
 
-            while True:
-                varDecNodes = self.varDeclaration()
-                declarationList.append(varDecNodes)
+                while True:
+                    varDecNodes = self.varDeclaration()
+                    declarationList.append(varDecNodes)
+                    self.eatToken(SEMICOLON)
+
+                    if self.currentToken.tokenType != ID:
+                        break
+
+            elif self.currentToken.tokenType == PROCEDURE:
+                self.eatToken(PROCEDURE)
+                procedureName = self.currentToken.value
+                self.eatToken(ID)
+                self.eatToken(OP)
+                paramList = self.parameterList()
+                self.eatToken(CP)
+                self.eatToken(SEMICOLON)
+                innerBlock = self.block()
+                procedureNode = ProcedureDeclarationNode(procedureName, paramList, innerBlock)
+                # ERROR WE NEED TO USE ANOTHER ARRAY BECAUSE OF VARDECLARATION Structure
+                # When traversing there is a problem especially in blockNode traversing
+                declarationList.append([procedureNode])
                 self.eatToken(SEMICOLON)
 
-                if self.currentToken.tokenType != ID:
-                    break
-
-        if self.currentToken.tokenType == PROCEDURE:
-            self.eatToken(PROCEDURE)
-            procedureName = self.currentToken.value
-            self.eatToken(ID)
-            self.eatToken(OP)
-            paramList = self.parameterList()
-            self.eatToken(CP)
-            self.eatToken(SEMICOLON)
-            innerBlock = self.block()
-            procedureNode = ProcedureDeclarationNode(procedureName, paramList, innerBlock)
-            # ERROR WE NEED TO USE ANOTHER ARRAY BECAUSE OF VARDECLARATION
-            declarationList.append([procedureNode])
-            self.eatToken(SEMICOLON)
+            else:
+                break
 
         return declarationList
 
     def block(self):
         """
-        block : declarations compound
+        block : declarations compounds
 
         Block is main body of program
         """
@@ -903,17 +911,17 @@ class SymbolTable(object):
     We create symbol tables from symbols in this class
     Scoping feature comes with procedures and their parameters
     controlled in this section.
+    There is one table created for every different scope
     """
     def __init__(self, scopeName, scopeLevel, parentScope=None):
         self.symbols = {}
         self.scopeName = scopeName
         self.scopeLevel = scopeLevel
         self.parentScope = parentScope
-        self.defineSymbol(BuiltInSymbol(INTEGER))
-        self.defineSymbol(BuiltInSymbol(REAL))
 
     def __str__(self):
-        print("/nScope Name", self.scopeName)
+        print()
+        print("Scope Name", self.scopeName)
         print("Scope Level", self.scopeLevel)
         print("Parent Scope", self.parentScope.scopeName if self.parentScope else None)
         return "Symbols: {symbols}".format(
@@ -922,6 +930,15 @@ class SymbolTable(object):
 
     def __repr__(self):
         return self.__str__()
+
+    def defineBuiltInSymbols(self):
+        """
+        If the created scope's level is lowest
+        than we insert built in symbols here
+        for one time and only to this scope
+        """
+        self.defineSymbol(BuiltInSymbol(INTEGER))
+        self.defineSymbol(BuiltInSymbol(REAL))
 
     def defineSymbol(self, symbol):
         """
@@ -973,9 +990,11 @@ class SemanticAnalyzer():
             print("Entering scope = Global scope!")
             globalScope = SymbolTable(
                 scopeName="global",
-                scopeLevel=1,
+                scopeLevel=0,
                 parentScope=self.currentScope  # None
             )
+            # Only for global scope
+            globalScope.defineBuiltInSymbols()
             self.currentScope = globalScope
             self.traverseTree(rootNode.block)
 
@@ -985,7 +1004,14 @@ class SemanticAnalyzer():
             print("Leaving scope = Global scope!")
 
         elif type(rootNode) == BlockNode:
-            [self.traverseTree(varDeclaration) for declaration in rootNode.declarations for varDeclaration in declaration]
+            """
+            Block Node contains two things the declarations and
+            compounds.
+            Declarations can consist from procedure or variable
+            declarations.
+            We have to traverse all var and procedure declarations
+            """
+            [self.traverseTree(d) for declarationList in rootNode.declarations for d in declarationList]
             self.traverseTree(rootNode.compounds)
 
         elif type(rootNode) == VarDeclarationNode:
@@ -1040,11 +1066,8 @@ class SemanticAnalyzer():
             [self.traverseTree(statement) for statement in rootNode.childs]
 
         elif type(rootNode) == AssignmentNode:
-            variableName = rootNode.left.name
-            variableSymbol = self.currentScope.checkSymbol(variableName)
-
-            if variableSymbol is None:
-                raise NameError(repr(variableName))
+            self.traverseTree(rootNode.left)
+            self.traverseTree(rootNode.right)
 
         elif type(rootNode) == VariableNode:
             variableName = rootNode.name
@@ -1101,7 +1124,14 @@ class Interpreter(object):
             self.traverseTree(rootNode.block)
 
         elif type(rootNode) == BlockNode:
-            [self.traverseTree(varDeclaration) for declaration in rootNode.declarations for varDeclaration in declaration]
+            """
+            Block Node contains two things the declarations and
+            compounds.
+            Declarations can consist from procedure or variable
+            declarations.
+            We have to traverse all var and procedure declarations
+            """
+            [self.traverseTree(d) for declarationList in rootNode.declarations for d in declarationList]
             self.traverseTree(rootNode.compounds)
 
         elif type(rootNode) == VarDeclarationNode:
@@ -1114,14 +1144,14 @@ class Interpreter(object):
             [self.traverseTree(statement) for statement in rootNode.childs]
 
         elif type(rootNode) == AssignmentNode:
-            variable = rootNode.left.variable
+            variable = rootNode.left.name
             expression = rootNode.right
 
             expression = self.traverseTree(expression)
             self.variableStorage[variable] = expression
 
         elif type(rootNode) == VariableNode:
-            variable = rootNode.variable
+            variable = rootNode.name
             if variable in self.variableStorage:
                 return self.variableStorage[variable]
             else:
@@ -1181,6 +1211,8 @@ def main():
         parser = Parser(lexer)
         interpreter = Interpreter(parser)
         interpreter.interpret()
+        print()
+        print("RunTime Var Storage:")
         print(interpreter.variableStorage)
 
 
